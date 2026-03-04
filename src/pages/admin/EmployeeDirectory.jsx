@@ -1,15 +1,13 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { initialEmployees } from '../../data/employees';
 import logoUrl from '../../assets/logo.png';
 import {
     Users, UserPlus, FileText, CheckCircle, Plane, CheckSquare,
-    LayoutDashboard, Search, Bell, Menu, X, LogOut, FileCode2, Edit, Save
+    LayoutDashboard, Search, Bell, Menu, X, LogOut, Network, Clock, DollarSign,
+    Mail, Phone, MapPin, Briefcase, Calendar, ChevronRight, Filter, Download, Save, Edit, FileCode2
 } from 'lucide-react';
-
-const EmployeeDirectory = ({ onLogout }) => {
+const EmployeeDirectory = ({ onLogout, employees = initialEmployees, setEmployees }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
-    const [employees, setEmployees] = useState(initialEmployees);
     const [selectedEmp, setSelectedEmp] = useState(null);
     const [isEditingPreview, setIsEditingPreview] = useState(false);
     const [editPreviewForm, setEditPreviewForm] = useState(null);
@@ -21,18 +19,44 @@ const EmployeeDirectory = ({ onLogout }) => {
 
     const navigate = useNavigate();
 
+    const getTierForRole = (role) => {
+        if (role === 'Director') return 1;
+        if (['Manager', 'HR Specialist'].includes(role)) return 2;
+        if (role === 'Supervisor') return 3;
+        return 4;
+    };
+
     const handleAddEmployee = (e) => {
         e.preventDefault();
-        const newId = employees.length > 0 ? Math.max(...employees.map(e => e.id)) + 1 : 1;
-        const addedEmp = { ...newEmp, id: newId, status: 'Active' };
-        setEmployees([...employees, addedEmp]);
+
+        const addedEmp = {
+            ...newEmp,
+            id: Date.now(),
+            status: 'Active',
+            tier: getTierForRole(newEmp.role),
+            sick: { total: 8, taken: 0 },
+            casual: { total: 5, taken: 0 },
+            annual: { total: 10, taken: 0 },
+            baseSalary: 5000,
+            remainingQuota: 20,
+            hoursWorked: 164,
+            overtimeWorked: 0,
+            createdAt: new Date().toISOString()
+        };
+
+        setEmployees(prev => [...prev, addedEmp]);
         setNewEmp({ name: '', role: '', email: '', joiningDate: '', age: '', qualification: '' });
         setIsAddModalOpen(false);
     };
 
     const handleSavePreview = () => {
-        setEmployees(employees.map(e => e.id === editPreviewForm.id ? editPreviewForm : e));
-        setSelectedEmp(editPreviewForm);
+        const updatedEmp = {
+            ...editPreviewForm,
+            tier: getTierForRole(editPreviewForm.role)
+        };
+
+        setEmployees(prev => prev.map(emp => emp.id === updatedEmp.id ? updatedEmp : emp));
+        setSelectedEmp(updatedEmp);
         setIsEditingPreview(false);
     };
 
@@ -72,9 +96,18 @@ const EmployeeDirectory = ({ onLogout }) => {
                             <Plane className="mr-3 text-brand-yellow group-hover:scale-110 transition-transform" size={20} />
                             <span className="font-medium">Leave Dashboard</span>
                         </a>
-                        <a href="#" className="flex items-center px-4 py-3 rounded-lg text-white/80 hover:bg-white/10 hover:text-white transition-all group">
-                            <CheckSquare className="mr-3 text-brand-yellow group-hover:scale-110 transition-transform" size={20} />
+
+                        <a href="#" onClick={(e) => { e.preventDefault(); navigate('/admin/chart'); }} className="flex items-center px-4 py-3 rounded-lg text-white/80 hover:bg-white/10 hover:text-white transition-all group">
+                            <Network className="mr-3 text-brand-yellow group-hover:scale-110 transition-transform" size={20} />
+                            <span className="font-medium">Chart</span>
+                        </a>
+                        <a href="#" onClick={(e) => { e.preventDefault(); navigate('/admin/attendance'); }} className="flex items-center px-4 py-3 rounded-lg text-white/80 hover:bg-white/10 hover:text-white transition-all group">
+                            <Clock className="mr-3 text-brand-yellow group-hover:scale-110 transition-transform" size={20} />
                             <span className="font-medium">Attendance</span>
+                        </a>
+                        <a href="#" onClick={(e) => { e.preventDefault(); navigate('/admin/payroll'); }} className="flex items-center px-4 py-3 rounded-lg text-white/80 hover:bg-white/10 hover:text-white transition-all group">
+                            <DollarSign className="mr-3 text-brand-yellow group-hover:scale-110 transition-transform" size={20} />
+                            <span className="font-medium">Payroll Overview</span>
                         </a>
                     </nav>
                 </div>
@@ -145,7 +178,14 @@ const EmployeeDirectory = ({ onLogout }) => {
                                         <Users size={32} className="text-brand-green group-hover:text-teal-700 dark:group-hover:text-brand-yellow transition-colors" />
                                     </div>
                                     <h3 className="text-xl font-bold text-brand-black dark:text-white mb-1 group-hover:text-brand-green dark:group-hover:text-brand-yellow transition-colors">{emp.name}</h3>
-                                    <p className="text-brand-green font-bold text-sm tracking-widest uppercase mb-6">{emp.role}</p>
+                                    <p className="text-brand-green font-bold text-sm tracking-widest uppercase mb-4">{emp.role}</p>
+
+                                    <div className="flex items-center space-x-2 mb-6 px-4 py-1.5 bg-brand-green/5 rounded-full border border-teal-500/10">
+                                        <Plane size={14} className="text-brand-green" />
+                                        <p className="text-[10px] font-black uppercase text-gray-500 tracking-widest">
+                                            Quota: <span className="text-brand-yellow font-black ml-1 text-xs">{emp.remainingQuota || 0} Days</span>
+                                        </p>
+                                    </div>
 
                                     <button
                                         onClick={() => {
@@ -188,13 +228,34 @@ const EmployeeDirectory = ({ onLogout }) => {
                                         <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Assigned Role</p>
                                         {isEditingPreview ? (
                                             <select value={editPreviewForm.role} onChange={e => setEditPreviewForm({ ...editPreviewForm, role: e.target.value })} className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded p-1 text-brand-black dark:text-white outline-none font-bold">
-                                                <option value="FRS II">FRS II</option>
-                                                <option value="FRS I">FRS I</option>
-                                                <option value="FRA">FRA</option>
-                                                <option value="HR">HR</option>
+                                                <option value="Director">Director (Tier 1)</option>
+                                                <option value="Manager">Manager (Tier 2)</option>
+                                                <option value="HR Specialist">HR Specialist (Tier 2)</option>
+                                                <option value="Supervisor">Supervisor (Tier 3)</option>
+                                                <option value="FRS II">FRS II (Tier 4)</option>
+                                                <option value="FRS I">FRS I (Tier 4)</option>
+                                                <option value="FRA">FRA (Tier 4)</option>
                                             </select>
                                         ) : (
                                             <p className="text-lg font-bold text-brand-green dark:text-brand-yellow">{selectedEmp.role}</p>
+                                        )}
+                                    </div>
+                                    <div className="bg-gray-50 dark:bg-gray-800/50 p-4 rounded-xl border border-gray-100 dark:border-gray-700">
+                                        <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Supervisor</p>
+                                        {isEditingPreview ? (
+                                            <select value={editPreviewForm.supervisorId || ''} onChange={e => setEditPreviewForm({ ...editPreviewForm, supervisorId: e.target.value })} className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded p-1 text-brand-black dark:text-white outline-none font-bold">
+                                                <option value="">No Reporting Head</option>
+                                                {employees
+                                                    .filter(e => e.id !== editPreviewForm.id)
+                                                    .filter(e => e.role === 'Supervisor')
+                                                    .map(emp => (
+                                                        <option key={emp.id} value={emp.id}>{emp.name}</option>
+                                                    ))}
+                                            </select>
+                                        ) : (
+                                            <p className="text-lg font-bold text-brand-black dark:text-white truncate">
+                                                {employees.find(e => String(e.id) === String(selectedEmp.supervisorId))?.name || 'Directorate'}
+                                            </p>
                                         )}
                                     </div>
                                     <div className="bg-gray-50 dark:bg-gray-800/50 p-4 rounded-xl border border-gray-100 dark:border-gray-700">
@@ -211,6 +272,14 @@ const EmployeeDirectory = ({ onLogout }) => {
                                             <input type="date" value={editPreviewForm.joiningDate} onChange={e => setEditPreviewForm({ ...editPreviewForm, joiningDate: e.target.value })} className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded p-1 text-brand-black dark:text-white outline-none font-bold" />
                                         ) : (
                                             <p className="text-lg font-bold text-brand-black dark:text-white">{selectedEmp.joiningDate}</p>
+                                        )}
+                                    </div>
+                                    <div className="bg-gray-50 dark:bg-gray-800/50 p-4 rounded-xl border border-gray-100 dark:border-gray-700">
+                                        <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-1">Remaining Quota</p>
+                                        {isEditingPreview ? (
+                                            <input type="number" value={editPreviewForm.remainingQuota} onChange={e => setEditPreviewForm({ ...editPreviewForm, remainingQuota: parseInt(e.target.value) || 0 })} className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded p-1 text-brand-black dark:text-white outline-none font-bold" />
+                                        ) : (
+                                            <p className="text-lg font-bold text-brand-yellow">{selectedEmp.remainingQuota || 0} Days</p>
                                         )}
                                     </div>
                                     <div className="bg-gray-50 dark:bg-gray-800/50 p-4 rounded-xl border border-gray-100 dark:border-gray-700">
@@ -315,10 +384,22 @@ const EmployeeDirectory = ({ onLogout }) => {
                                         <label className="text-sm font-bold text-gray-600 dark:text-gray-400 uppercase tracking-widest mb-1 block">Role</label>
                                         <select required value={newEmp.role} onChange={e => setNewEmp({ ...newEmp, role: e.target.value })} className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 text-brand-black dark:text-white rounded-lg px-4 py-3 focus:border-brand-green dark:focus:border-brand-yellow outline-none transition-colors appearance-none cursor-pointer">
                                             <option value="" disabled>Select Role</option>
-                                            <option value="FRS II">FRS II</option>
-                                            <option value="FRS I">FRS I</option>
-                                            <option value="FRA">FRA</option>
-                                            <option value="HR">HR</option>
+                                            <option value="Director">Director (Tier 1)</option>
+                                            <option value="Manager">Manager (Tier 2)</option>
+                                            <option value="HR Specialist">HR Specialist (Tier 2)</option>
+                                            <option value="Supervisor">Supervisor (Tier 3)</option>
+                                            <option value="FRS II">FRS II (Tier 4)</option>
+                                            <option value="FRS I">FRS I (Tier 4)</option>
+                                            <option value="FRA">FRA (Tier 4)</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-sm font-bold text-gray-600 dark:text-gray-400 uppercase tracking-widest mb-1 block">Supervisor</label>
+                                        <select value={newEmp.supervisorId || ''} onChange={e => setNewEmp({ ...newEmp, supervisorId: e.target.value })} className="w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 text-brand-black dark:text-white rounded-lg px-4 py-3 focus:border-brand-green dark:focus:border-brand-yellow outline-none transition-colors appearance-none cursor-pointer">
+                                            <option value="">No Reporting Head</option>
+                                            {employees.filter(e => e.role === 'Supervisor').map(emp => (
+                                                <option key={emp.id} value={emp.id}>{emp.name}</option>
+                                            ))}
                                         </select>
                                     </div>
                                     <div>

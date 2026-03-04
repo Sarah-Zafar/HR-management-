@@ -70,10 +70,6 @@ const Sidebar = ({ role, isOpen, onToggle, onLogout }) => {
                                     <Plane className="mr-3 group-hover:text-brand-yellow transition-colors group-[.active]:text-brand-yellow" size={20} />
                                     <span className="font-medium">Leave Dashboard</span>
                                 </NavLink>
-                                <NavLink to="/admin/attendance" className={({ isActive }) => `flex items-center px-4 py-3 rounded-lg border-l-4 transition-all group ${isActive ? 'bg-brand-green text-white border-brand-yellow' : `text-gray-400 border-transparent hover:text-white hover:${activeColorClass}`}`}>
-                                    <CheckSquare className="mr-3 group-hover:text-brand-yellow transition-colors group-[.active]:text-brand-yellow" size={20} />
-                                    <span className="font-medium">Attendance Records</span>
-                                </NavLink>
                             </>
                         ) : (
                             // Employee Links

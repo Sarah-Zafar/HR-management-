@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Building2, Users, ArrowRight } from 'lucide-react';
+import logoUrl from '../assets/logo.png';
 
 const GatewayPage = () => {
     const navigate = useNavigate();
@@ -8,8 +9,8 @@ const GatewayPage = () => {
     return (
         <div className="min-h-screen bg-brand-green flex flex-col items-center justify-center p-6 transition-colors">
             <div className="mb-12 text-center animate-fade-in-up">
-                {/* We moved logo.png to src/assets, so we import or reference it */}
-                <img src="/src/assets/logo.png" alt="Octa Accountants Logo" className="w-64 max-w-full mx-auto drop-shadow-md mb-6 hover:scale-105 transition-transform duration-300" />
+                {/* We reference the imported logoUrl */}
+                <img src={logoUrl} alt="Octa Accountants Logo" className="w-64 max-w-full mx-auto drop-shadow-md mb-6 hover:scale-105 transition-transform duration-300" />
                 <h1 className="text-3xl md:text-4xl font-bold text-white tracking-tight">HR Management System</h1>
                 <p className="text-gray-200 mt-3 text-lg font-medium opacity-90">Select your portal to continue</p>
             </div>
@@ -26,7 +27,7 @@ const GatewayPage = () => {
                         </div>
                         <h2 className="text-2xl font-bold text-brand-black dark:text-white mb-3 tracking-tight">Admin Portal</h2>
                         <p className="text-gray-600 dark:text-gray-400 mb-8 leading-relaxed">
-                            Manage organization attendance, process payroll, approve leave requests, and oversee employee directories seamlessly.
+                            Manage organization records, process payroll, approve leave requests, and oversee employee directories seamlessly.
                         </p>
                     </div>
                     <div className="flex items-center text-brand-green font-bold text-lg">
@@ -45,7 +46,7 @@ const GatewayPage = () => {
                         </div>
                         <h2 className="text-2xl font-bold text-brand-black dark:text-white mb-3 tracking-tight">Employee Portal</h2>
                         <p className="text-gray-600 dark:text-gray-400 mb-8 leading-relaxed">
-                            Access your personal attendance records, check leave balances, view paystubs, and clock in/out daily via self-service.
+                            Access your personal records, check leave balances, and view paystubs via self-service.
                         </p>
                     </div>
                     <div className="flex items-center text-brand-green font-bold text-lg">

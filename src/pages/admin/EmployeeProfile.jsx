@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { initialEmployees } from '../../data/employees';
 import logoUrl from '../../assets/logo.png';
 import {
     Users, Plane, CheckSquare, LayoutDashboard, Search, Bell, Menu, X, LogOut,
-    ArrowLeft, Edit, Save, Clock, FileText, User
+    ArrowLeft, Edit, Save, Clock, FileText, User, Network, DollarSign
 } from 'lucide-react';
 
-const EmployeeProfile = ({ onLogout }) => {
+const EmployeeProfile = ({ onLogout, employeesData = [], setEmployeesData }) => {
     const { id } = useParams();
     const navigate = useNavigate();
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -18,20 +17,23 @@ const EmployeeProfile = ({ onLogout }) => {
     const [editForm, setEditForm] = useState(null);
 
     useEffect(() => {
-        // Simulate fetching employee by ID
-        const foundEmp = initialEmployees.find(emp => emp.id === parseInt(id));
-        if (foundEmp) {
-            setEmployee(foundEmp);
-            setEditForm(foundEmp);
-        } else {
-            // if not found, push back
-            navigate('/admin/directory');
+        // Fetch from global state so changes propagate immediately
+        if (employeesData.length > 0) {
+            const foundEmp = employeesData.find(emp => emp.id === parseInt(id));
+            if (foundEmp) {
+                setEmployee(foundEmp);
+                setEditForm(foundEmp);
+            } else {
+                navigate('/admin/directory');
+            }
         }
-    }, [id, navigate]);
+    }, [id, employeesData, navigate]);
 
     const handleSave = () => {
-        // Here you would save to an API. 
-        // We update local component state to reflect change
+        // Sync local edit form to global state
+        if (setEmployeesData) {
+            setEmployeesData(prev => prev.map(emp => emp.id === editForm.id ? editForm : emp));
+        }
         setEmployee(editForm);
         setIsEditing(false);
     };
@@ -43,6 +45,22 @@ const EmployeeProfile = ({ onLogout }) => {
     };
 
     if (!employee) return <div className="p-10 text-center font-bold">Loading Employee Data...</div>;
+
+    const sick = employee.sick || { taken: 1, total: 8 };
+    const annual = employee.annual || { taken: 0, total: 10 };
+    const casual = employee.casual || { taken: 0, total: 5 };
+
+    const renderLeaveBoxes = (quota, taken, fillClass) => {
+        const boxes = [];
+        for (let i = 0; i < quota; i++) {
+            if (i < taken) {
+                boxes.push(<div key={i} className={`w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-[3px] shadow-sm ${fillClass}`}></div>);
+            } else {
+                boxes.push(<div key={i} className="w-3.5 h-3.5 sm:w-4 sm:h-4 rounded-[3px] border border-gray-400 bg-gray-100 dark:border-gray-600 dark:bg-[#1A1A1A]"></div>);
+            }
+        }
+        return <div className="flex flex-wrap gap-1.5 mt-2">{boxes}</div>;
+    };
 
     return (
         <div className="flex h-screen bg-gray-50 font-sans overflow-hidden">
@@ -80,9 +98,18 @@ const EmployeeProfile = ({ onLogout }) => {
                             <Plane className="mr-3 text-brand-yellow group-hover:scale-110 transition-transform" size={20} />
                             <span className="font-medium">Leave Dashboard</span>
                         </a>
-                        <a href="#" className="flex items-center px-4 py-3 rounded-lg text-white/80 hover:bg-white/10 hover:text-white transition-all group">
-                            <CheckSquare className="mr-3 text-brand-yellow group-hover:scale-110 transition-transform" size={20} />
+
+                        <a href="#" onClick={(e) => { e.preventDefault(); navigate('/admin/chart'); }} className="flex items-center px-4 py-3 rounded-lg text-white/80 hover:bg-white/10 hover:text-white transition-all group">
+                            <Network className="mr-3 text-brand-yellow group-hover:scale-110 transition-transform" size={20} />
+                            <span className="font-medium">Chart</span>
+                        </a>
+                        <a href="#" onClick={(e) => { e.preventDefault(); navigate('/admin/attendance'); }} className="flex items-center px-4 py-3 rounded-lg text-white/80 hover:bg-white/10 hover:text-white transition-all group">
+                            <Clock className="mr-3 text-brand-yellow group-hover:scale-110 transition-transform" size={20} />
                             <span className="font-medium">Attendance</span>
+                        </a>
+                        <a href="#" onClick={(e) => { e.preventDefault(); navigate('/admin/payroll'); }} className="flex items-center px-4 py-3 rounded-lg text-white/80 hover:bg-white/10 hover:text-white transition-all group">
+                            <DollarSign className="mr-3 text-brand-yellow group-hover:scale-110 transition-transform" size={20} />
+                            <span className="font-medium">Payroll Overview</span>
                         </a>
                     </nav>
                 </div>
@@ -176,7 +203,6 @@ const EmployeeProfile = ({ onLogout }) => {
                             {/* Left Col - Data fields */}
                             <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-6">
 
-                                {/* Personal Block */}
                                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-center">
                                     <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-1">Age / Demographics</p>
                                     {isEditing ? (
@@ -185,6 +211,26 @@ const EmployeeProfile = ({ onLogout }) => {
                                         <p className="font-bold text-xl text-brand-black">{employee.age || 25} Years Old</p>
                                     )}
                                     <p className="text-sm text-gray-500 font-medium mt-1">Male</p>
+                                </div>
+
+                                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-center">
+                                    <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-1">Supervisor</p>
+                                    {isEditing ? (
+                                        <select value={editForm.supervisorId || ''} onChange={e => setEditForm({ ...editForm, supervisorId: e.target.value })} className="border border-gray-200 rounded px-3 py-2 focus:outline-brand-green font-bold text-lg text-brand-black w-full outline-none">
+                                            <option value="" disabled>Select Supervisor</option>
+                                            <option value="r1">Bilal Zafar</option>
+                                            <option value="r2">Ahmer Bhai</option>
+                                            {employeesData.filter(e => e.id !== editForm.id).map(emp => (
+                                                <option key={emp.id} value={emp.id}>{emp.name}</option>
+                                            ))}
+                                        </select>
+                                    ) : (
+                                        <p className="font-bold text-xl text-brand-green">
+                                            {employee.supervisorId === 'r1' ? 'Bilal Zafar' :
+                                                employee.supervisorId === 'r2' ? 'Ahmer Bhai' :
+                                                    employeesData.find(e => String(e.id) === String(employee.supervisorId))?.name || 'Unassigned'}
+                                        </p>
+                                    )}
                                 </div>
 
                                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-center">
@@ -230,6 +276,33 @@ const EmployeeProfile = ({ onLogout }) => {
                                         <div>
                                             <p className="text-sm text-gray-500 font-bold mb-1">Overtime Logged</p>
                                             <p className="font-extrabold text-3xl text-gray-700">12 <span className="text-sm text-gray-400 font-medium">hrs</span></p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-center sm:col-span-2">
+                                    <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-3 border-b border-gray-100 pb-2 flex items-center"><Plane size={16} className="mr-2 text-brand-black" /> Leave Balance (Box-Grid)</p>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                        <div>
+                                            <div className="flex justify-between text-xs font-bold text-gray-500 mb-1">
+                                                <span>Sick Leave</span>
+                                                <span className="text-brand-black">{sick.total - sick.taken} / {sick.total} Remaining</span>
+                                            </div>
+                                            {renderLeaveBoxes(sick.total, sick.taken, "bg-amber-500")}
+                                        </div>
+                                        <div>
+                                            <div className="flex justify-between text-xs font-bold text-gray-500 mb-1">
+                                                <span>Annual Leave</span>
+                                                <span className="text-brand-black">{annual.total - annual.taken} / {annual.total} Remaining</span>
+                                            </div>
+                                            {renderLeaveBoxes(annual.total, annual.taken, "bg-green-500")}
+                                        </div>
+                                        <div>
+                                            <div className="flex justify-between text-xs font-bold text-gray-500 mb-1">
+                                                <span>Casual Leave</span>
+                                                <span className="text-brand-black">{casual.total - casual.taken} / {casual.total} Remaining</span>
+                                            </div>
+                                            {renderLeaveBoxes(casual.total, casual.taken, "bg-blue-500")}
                                         </div>
                                     </div>
                                 </div>

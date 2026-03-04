@@ -6,13 +6,41 @@ import {
 import logoUrl from '../../assets/logo.png';
 import { getEventsForDay } from '../../utils/calendarEvents';
 
-const MyCalendar = ({ onLogout }) => {
+const MyCalendar = ({ onLogout, leaveRequests = [], companyHolidays = [], employeesData = [] }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [currentDate, setCurrentDate] = useState(new Date());
     const [showModal, setShowModal] = useState(false);
     const [selectedDayEvents, setSelectedDayEvents] = useState([]);
     const [selectedDateFormatted, setSelectedDateFormatted] = useState('');
     const navigate = useNavigate();
+
+    // The current logged-in employee name (mocked as the first employee for this demo session)
+    const me = (employeesData || []).find(e => e.id === user?.uid || e.id === 1) || (employeesData || [])[0];
+    const currentEmployeeName = me?.name || '';
+
+    const getMergedEventsForDay = (day, month, year) => {
+        const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+        // 1. Get static/mock events
+        const staticEvents = getEventsForDay(day, month, year) || [];
+
+        // 2. Get company holidays
+        const holidayEvents = (companyHolidays || [])
+            .filter(h => h?.date === dateStr)
+            .map(h => ({ title: h?.title || 'Holiday', type: 'holiday', time: 'All Day' }));
+
+        // 3. Get approved leaves for THIS employee
+        const leaveEvents = (leaveRequests || [])
+            .filter(req =>
+                req?.employeeName === currentEmployeeName &&
+                req?.status === 'Approved' &&
+                dateStr >= req?.startDate &&
+                dateStr <= req?.endDate
+            )
+            .map(req => ({ title: `On Leave: ${req?.leaveType || 'General'}`, type: 'leave', time: 'All Day' }));
+
+        return [...staticEvents, ...holidayEvents, ...leaveEvents];
+    };
 
     const handleLogout = () => {
         if (onLogout) onLogout();
@@ -30,7 +58,7 @@ const MyCalendar = ({ onLogout }) => {
     const handleToday = () => {
         const today = new Date();
         setCurrentDate(today);
-        const events = getEventsForDay(today.getDate(), today.getMonth(), today.getFullYear());
+        const events = getMergedEventsForDay(today.getDate(), today.getMonth(), today.getFullYear());
         setSelectedDayEvents(events);
         setSelectedDateFormatted(today.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }));
         setShowModal(true);
@@ -38,7 +66,7 @@ const MyCalendar = ({ onLogout }) => {
 
     const handleDayClick = (day) => {
         const dateObj = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
-        const events = getEventsForDay(day, currentDate.getMonth(), currentDate.getFullYear());
+        const events = getMergedEventsForDay(day, currentDate.getMonth(), currentDate.getFullYear());
         setSelectedDayEvents(events);
         setSelectedDateFormatted(dateObj.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }));
         setShowModal(true);
@@ -156,6 +184,9 @@ const MyCalendar = ({ onLogout }) => {
                                     <div className="flex items-center text-xs font-bold text-gray-500 uppercase tracking-widest bg-white dark:bg-gray-800 px-3 py-1.5 rounded-lg shadow-sm border border-gray-100 dark:border-gray-700">
                                         <div className="w-3 h-3 bg-red-500 rounded-full mr-2"></div> Deadlines
                                     </div>
+                                    <div className="flex items-center text-xs font-bold text-gray-500 uppercase tracking-widest bg-white dark:bg-gray-800 px-3 py-1.5 rounded-lg shadow-sm border border-gray-100 dark:border-gray-700">
+                                        <div className="w-3 h-3 bg-blue-500 rounded-full mr-2"></div> Approved Leaves
+                                    </div>
                                     <button onClick={handleToday} className="ml-4 px-4 py-2 bg-brand-green text-white font-bold rounded-lg hover:bg-teal-700 transition-colors shadow-md">
                                         Today
                                     </button>
@@ -178,7 +209,7 @@ const MyCalendar = ({ onLogout }) => {
                                 ))}
 
                                 {monthDays.map(day => {
-                                    const events = getEventsForDay(day, currentDate.getMonth(), currentDate.getFullYear());
+                                    const events = getMergedEventsForDay(day, currentDate.getMonth(), currentDate.getFullYear());
                                     const today = new Date();
                                     const isToday = day === today.getDate() && currentDate.getMonth() === today.getMonth() && currentDate.getFullYear() === today.getFullYear();
 
@@ -200,6 +231,7 @@ const MyCalendar = ({ onLogout }) => {
                                                     if (evt.type === 'meeting') colorClasses = "bg-brand-yellow/20 text-yellow-800 dark:text-brand-yellow border border-brand-yellow/30";
                                                     if (evt.type === 'holiday') colorClasses = "bg-brand-green text-white border border-teal-600 shadow-sm";
                                                     if (evt.type === 'deadline') colorClasses = "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border border-red-200 dark:border-red-800/50";
+                                                    if (evt.type === 'leave') colorClasses = "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border border-blue-200 dark:border-blue-800/50";
 
                                                     return (
                                                         <div key={idx} className={`px-2 py-1.5 rounded text-xs font-bold truncate transition-all hover:scale-[1.02] hover:shadow-md ${colorClasses}`} title={`${evt.time} - ${evt.title}`}>
@@ -253,6 +285,10 @@ const MyCalendar = ({ onLogout }) => {
                                                 if (evt.type === 'deadline') {
                                                     badgeClass = "bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400 border-red-200 dark:border-red-800/50";
                                                     icon = <CheckSquare size={16} />;
+                                                }
+                                                if (evt.type === 'leave') {
+                                                    badgeClass = "bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400 border-blue-200 dark:border-blue-800/50";
+                                                    icon = <Briefcase size={16} />;
                                                 }
 
                                                 return (

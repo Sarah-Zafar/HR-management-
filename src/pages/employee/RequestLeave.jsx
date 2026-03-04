@@ -3,9 +3,11 @@ import { useNavigate, Link } from 'react-router-dom';
 import {
     Clock, Plane, Calendar, Send, Building2, CheckSquare, X, Menu, LogOut, LayoutDashboard, DollarSign, Briefcase, Calendar as CalendarIcon
 } from 'lucide-react';
+import { db } from '../../firebase';
+import { collection, addDoc } from 'firebase/firestore';
 import logoUrl from '../../assets/logo.png';
 
-const RequestLeave = ({ onLogout, leaveRequests = [], setLeaveRequests, employeesData = [] }) => {
+const RequestLeave = ({ onLogout, user, leaveRequests = [], setLeaveRequests, employeesData = [] }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [showSuccess, setShowSuccess] = useState(false);
     const navigate = useNavigate();
@@ -20,28 +22,56 @@ const RequestLeave = ({ onLogout, leaveRequests = [], setLeaveRequests, employee
         navigate('/');
     };
 
-    const handleSubmitLeave = (e) => {
+    const getWorkdaysCount = (start, end) => {
+        if (!start || !end) return 0;
+        let count = 0;
+        let curr = new Date(start);
+        let last = new Date(end);
+        while (curr <= last) {
+            const day = curr.getDay();
+            if (day !== 0 && day !== 6) count++;
+            curr.setDate(curr.getDate() + 1);
+        }
+        return count;
+    };
+
+    const handleSubmitLeave = async (e) => {
         e.preventDefault();
 
-        const newReq = {
-            id: Math.random().toString(36).substr(2, 9),
-            employeeName: employeesData.length > 0 ? employeesData[0].name : 'Current Employee',
-            leaveType,
-            startDate,
-            endDate,
-            status: 'Pending'
-        };
+        // Dynamically find 'me' based on app user email
+        const me = employeesData.find(e => e.email?.toLowerCase() === user?.email?.toLowerCase()) ||
+            employeesData.find(e => e.name === 'Talha Arif') ||
+            employeesData[0];
 
-        if (setLeaveRequests) {
-            setLeaveRequests([newReq, ...leaveRequests]);
+        const daysRequested = getWorkdaysCount(startDate, endDate);
+
+        if (daysRequested > (me?.remainingQuota || 0)) {
+            alert("Insufficient leave balance.");
+            return;
         }
 
-        setShowSuccess(true);
-        setTimeout(() => setShowSuccess(false), 3000);
+        try {
+            const newReq = {
+                employeeName: me?.name || 'Employee',
+                userId: String(me?.id),
+                leaveType,
+                startDate,
+                endDate,
+                status: 'Pending',
+                createdAt: new Date().toISOString()
+            };
 
-        setStartDate('');
-        setEndDate('');
-        setLeaveType('Sick Leave');
+            await addDoc(collection(db, "leaves"), newReq);
+            setShowSuccess(true);
+            setTimeout(() => setShowSuccess(false), 3000);
+
+            setStartDate('');
+            setEndDate('');
+            setLeaveType('Sick Leave');
+        } catch (error) {
+            console.error("Leave Request Error:", error);
+            alert("Failed to submit request.");
+        }
     };
 
     return (
@@ -56,7 +86,7 @@ const RequestLeave = ({ onLogout, leaveRequests = [], setLeaveRequests, employee
             )}
 
             {/* Fixed Sidebar */}
-            <aside className={`fixed lg:static inset-y-0 left-0 z-50 w-64 bg-brand-green flex flex-col transition-transform duration-300 ease-in-out border-r border-teal-900 shadow-2xl ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
+            <aside className={`fixed lg:static inset - y - 0 left - 0 z - 50 w - 64 bg - brand - green flex flex - col transition - transform duration - 300 ease -in -out border - r border - teal - 900 shadow - 2xl ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'} `}>
                 <div className="h-20 flex items-center justify-between px-6 border-b border-teal-800 bg-white/5">
                     <div className="bg-white p-2 rounded-lg flex items-center justify-center w-full shadow-inner">
                         <img src={logoUrl} alt="Octa Accountants" className="h-8 object-contain" />
@@ -251,7 +281,7 @@ const RequestLeave = ({ onLogout, leaveRequests = [], setLeaveRequests, employee
                                                             {req.startDate} to {req.endDate}
                                                         </td>
                                                         <td className="py-4 px-6 text-center">
-                                                            <span className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest shadow-sm ${badgeClass}`}>
+                                                            <span className={`px - 4 py - 1.5 rounded - full text - xs font - bold uppercase tracking - widest shadow - sm ${badgeClass} `}>
                                                                 {req.status}
                                                             </span>
                                                         </td>

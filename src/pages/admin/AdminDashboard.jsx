@@ -1,21 +1,51 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import StatCard from '../../components/dashboard/StatCard';
-import { initialEmployees } from '../../data/employees';
 import logoUrl from '../../assets/logo.png';
 import {
-    Users, Building2, Plane, CheckSquare,
-    LayoutDashboard, Megaphone, Calendar, Search, Bell, Menu, X, LogOut
+    Users, Plane, CheckSquare, Network, LayoutDashboard, Menu, LogOut,
+    Search, Bell, Megaphone, Calendar, X, Clock, DollarSign
 } from 'lucide-react';
 
-const AdminDashboard = ({ onLogout }) => {
+const AdminDashboard = ({ onLogout, employeesData = [], leaveRequests = [], attendanceData = [], announcements = [], setAnnouncements }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [newAnnouncement, setNewAnnouncement] = useState('');
+    const [isPosting, setIsPosting] = useState(false);
     const navigate = useNavigate();
 
     const handleLogout = () => {
         onLogout();
         navigate('/');
     };
+
+    const handlePostAnnouncement = (e) => {
+        e.preventDefault();
+        if (!newAnnouncement.trim()) return;
+
+        const newAnn = {
+            id: Date.now(),
+            text: newAnnouncement,
+            createdAt: { toDate: () => new Date() }, // Mocking Firestore toDate for compatibility
+            author: 'Admin'
+        };
+
+        setAnnouncements(prev => [newAnn, ...prev]);
+        setNewAnnouncement('');
+    };
+
+    const handleDeleteAnnouncement = (id) => {
+        setAnnouncements(prev => prev.filter(ann => ann.id !== id));
+    };
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const onLeaveToday = (leaveRequests || []).filter(req =>
+        req?.status === 'Approved' &&
+        req?.startDate && req?.endDate &&
+        todayStr >= req.startDate &&
+        todayStr <= req.endDate
+    ).length;
+
+    const pendingLeaves = (leaveRequests || []).filter(r => r?.status === 'Pending').length;
 
     return (
         <div className="flex h-screen bg-gray-50 dark:bg-gray-900 font-sans overflow-hidden">
@@ -53,14 +83,22 @@ const AdminDashboard = ({ onLogout }) => {
                             <Plane className="mr-3 text-brand-yellow group-hover:scale-110 transition-transform" size={20} />
                             <span className="font-medium">Leave Dashboard</span>
                         </a>
-                        <a href="#" className="flex items-center px-4 py-3 rounded-lg text-white/80 hover:bg-white/10 hover:text-white transition-all group">
-                            <CheckSquare className="mr-3 text-brand-yellow group-hover:scale-110 transition-transform" size={20} />
+                        <a href="#" onClick={(e) => { e.preventDefault(); navigate('/admin/chart'); }} className="flex items-center px-4 py-3 rounded-lg text-white/80 hover:bg-white/10 hover:text-white transition-all group">
+                            <Network className="mr-3 text-brand-yellow group-hover:scale-110 transition-transform" size={20} />
+                            <span className="font-medium">Chart</span>
+                        </a>
+                        <a href="#" onClick={(e) => { e.preventDefault(); navigate('/admin/attendance'); }} className="flex items-center px-4 py-3 rounded-lg text-white/80 hover:bg-white/10 hover:text-white transition-all group">
+                            <Clock className="mr-3 text-brand-yellow group-hover:scale-110 transition-transform" size={20} />
                             <span className="font-medium">Attendance</span>
+                        </a>
+                        <a href="#" onClick={(e) => { e.preventDefault(); navigate('/admin/payroll'); }} className="flex items-center px-4 py-3 rounded-lg text-white/80 hover:bg-white/10 hover:text-white transition-all group">
+                            <DollarSign className="mr-3 text-brand-yellow group-hover:scale-110 transition-transform" size={20} />
+                            <span className="font-medium">Payroll Overview</span>
                         </a>
                     </nav>
                 </div>
 
-                <div className="p-4 border-t border-teal-800">
+                <div className="p-4 border-t border-teal-800 space-y-2">
                     <button onClick={handleLogout} className="flex items-center w-full px-4 py-3 rounded-lg text-white/80 hover:bg-red-500/20 hover:text-red-300 transition-colors group">
                         <LogOut className="mr-3 group-hover:-translate-x-1 transition-transform" size={20} />
                         <span className="font-medium">Sign Out</span>
@@ -115,39 +153,82 @@ const AdminDashboard = ({ onLogout }) => {
 
                         {/* Top Section - Stat Cards */}
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 animate-fade-in-up">
-                            <StatCard title="Total Employees" value={initialEmployees.length.toString()} icon={Users} theme="green" />
-                            <StatCard title="Teams" value="8" icon={Building2} theme="green" />
-                            <StatCard title="On Leave" value="12" icon={Plane} theme="green" />
-                            <StatCard title="Present Today" value="130" icon={CheckSquare} theme="green" />
+                            <StatCard
+                                title="Total Employees"
+                                value={employeesData?.length || 0}
+                                icon={Users}
+                                trend="+2 this month"
+                                theme="green"
+                            />
+                            <StatCard
+                                title="On Leave Today"
+                                value={onLeaveToday}
+                                icon={Plane}
+                                trend="Updated now"
+                                theme="default"
+                            />
+                            <StatCard
+                                title="Pending Requests"
+                                value={pendingLeaves}
+                                icon={CheckSquare}
+                                trend="Action required"
+                                theme="default"
+                            />
+                            <StatCard
+                                title="Organization Tier"
+                                value="4-Tier"
+                                icon={Network}
+                                trend="Master Structure"
+                                theme="yellow"
+                            />
                         </div>
 
-                        {/* Bottom Section - Informational */}
+                        {/* Announcements & Upcoming Events */}
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-
-                            {/* Left Column: Announcements */}
-                            <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-6 sm:p-8 shadow-sm hover:shadow-md transition-shadow">
-                                <div className="flex items-center justify-between mb-6 border-b border-gray-100 dark:border-gray-700 pb-4">
-                                    <h2 className="text-xl font-bold text-brand-black dark:text-white flex items-center tracking-tight">
-                                        <Megaphone className="mr-3 text-brand-green dark:text-brand-yellow" size={24} /> Company Announcements
-                                    </h2>
+                            {/* Announcements */}
+                            <div className="bg-white dark:bg-gray-800 rounded-3xl p-8 shadow-sm border border-gray-100 dark:border-gray-700">
+                                <div className="flex items-center justify-between mb-8">
+                                    <h3 className="text-lg font-black text-brand-black dark:text-white uppercase tracking-wider flex items-center">
+                                        <Megaphone className="mr-3 text-brand-yellow" size={20} /> Announcements
+                                    </h3>
                                 </div>
 
-                                <div className="space-y-4">
-                                    <div className="p-4 rounded-xl border border-blue-100 bg-blue-50/50 dark:bg-blue-900/10 dark:border-blue-900/30 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors cursor-pointer group">
-                                        <span className="inline-block px-2 py-1 bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-400 text-xs font-bold rounded mb-2 uppercase tracking-widest shadow-sm">Policy</span>
-                                        <h3 className="font-bold text-brand-black dark:text-white text-lg group-hover:text-blue-700 dark:group-hover:text-blue-400 transition-colors">New Policy Update</h3>
-                                        <p className="text-gray-600 dark:text-gray-400 text-sm mt-1 leading-relaxed">Please review the updated remote work guidelines effective next month inside the HR portal.</p>
+                                <form onSubmit={handlePostAnnouncement} className="mb-6">
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="text"
+                                            value={newAnnouncement}
+                                            onChange={(e) => setNewAnnouncement(e.target.value)}
+                                            placeholder="Post a new announcement..."
+                                            className="flex-1 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-2 text-sm outline-none focus:border-brand-yellow transition-all"
+                                        />
+                                        <button
+                                            type="submit"
+                                            disabled={isPosting}
+                                            className="bg-brand-black text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-gray-800 transition-colors disabled:opacity-50"
+                                        >
+                                            {isPosting ? '...' : 'Post'}
+                                        </button>
                                     </div>
+                                </form>
 
-                                    <div className="p-4 rounded-xl border border-orange-100 bg-orange-50/50 dark:bg-orange-900/10 dark:border-orange-900/30 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors cursor-pointer group">
-                                        <span className="inline-block px-2 py-1 bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-400 text-xs font-bold rounded mb-2 uppercase tracking-widest shadow-sm">Facility</span>
-                                        <h3 className="font-bold text-brand-black dark:text-white text-lg group-hover:text-orange-700 dark:group-hover:text-orange-400 transition-colors">Office Maintenance</h3>
-                                        <p className="text-gray-600 dark:text-gray-400 text-sm mt-1 leading-relaxed">The main HVAC system will be undergoing scheduled maintenance this weekend. The physical office will be closed.</p>
-                                    </div>
+                                <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                                    {(announcements || []).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)).map((ann) => (
+                                        <div key={ann.id} className="p-4 bg-gray-50 dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-700 group relative">
+                                            <p className="text-sm text-gray-700 dark:text-gray-300 font-medium mb-2">{ann?.text || ''}</p>
+                                            <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-gray-400">
+                                                <span>{ann?.createdAt?.toDate ? ann.createdAt.toDate().toLocaleDateString() : 'Just now'}</span>
+                                                <button onClick={() => handleDeleteAnnouncement(ann.id)} className="text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">Delete</button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {(announcements || []).length === 0 && (
+                                        <div className="text-center py-10 text-gray-400 font-bold uppercase tracking-widest text-xs">No announcements yet</div>
+                                    )}
                                 </div>
                             </div>
 
-                            {/* Right Column: Upcoming Events */}
+                            {/* Upcoming Events */}
                             <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-6 sm:p-8 shadow-sm hover:shadow-md transition-shadow">
                                 <div className="flex items-center justify-between mb-6 border-b border-gray-100 dark:border-gray-700 pb-4">
                                     <h2 className="text-xl font-bold text-brand-black dark:text-white flex items-center tracking-tight">
@@ -156,7 +237,6 @@ const AdminDashboard = ({ onLogout }) => {
                                 </div>
 
                                 <div className="space-y-4">
-                                    {/* Event 1 */}
                                     <div className="flex items-center p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-xl transition-colors cursor-pointer group">
                                         <div className="bg-white dark:bg-gray-800 border-2 border-gray-100 dark:border-gray-600 rounded-xl p-3 min-w-[76px] text-center shadow-sm group-hover:border-brand-green transition-colors">
                                             <span className="block text-2xl font-extrabold text-brand-green dark:text-brand-yellow leading-none mb-1">12</span>
@@ -168,7 +248,6 @@ const AdminDashboard = ({ onLogout }) => {
                                         </div>
                                     </div>
 
-                                    {/* Event 2 */}
                                     <div className="flex items-center p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-xl transition-colors cursor-pointer group">
                                         <div className="bg-white dark:bg-gray-800 border-2 border-brand-yellow/30 dark:border-brand-yellow/20 rounded-xl p-3 min-w-[76px] text-center shadow-sm group-hover:border-brand-yellow transition-colors">
                                             <span className="block text-2xl font-extrabold text-brand-green dark:text-brand-yellow leading-none mb-1">15</span>
@@ -179,22 +258,8 @@ const AdminDashboard = ({ onLogout }) => {
                                             <p className="text-sm font-semibold text-gray-500 mt-1 uppercase tracking-wider text-orange-600 dark:text-orange-400">Q3 Financials Due</p>
                                         </div>
                                     </div>
-
-                                    {/* Event 3 */}
-                                    <div className="flex items-center p-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-xl transition-colors cursor-pointer group">
-                                        <div className="bg-white dark:bg-gray-800 border-2 border-gray-100 dark:border-gray-600 rounded-xl p-3 min-w-[76px] text-center shadow-sm group-hover:border-brand-green transition-colors">
-                                            <span className="block text-2xl font-extrabold text-brand-green dark:text-brand-yellow leading-none mb-1">20</span>
-                                            <span className="block text-xs font-bold text-gray-400 uppercase tracking-widest">Oct</span>
-                                        </div>
-                                        <div className="ml-5">
-                                            <h3 className="font-bold text-brand-black dark:text-white text-lg group-hover:text-brand-green dark:group-hover:text-brand-yellow transition-colors">Client Visit</h3>
-                                            <p className="text-sm font-semibold text-gray-500 mt-1 uppercase tracking-wider">2:00 PM - Boardroom A</p>
-                                        </div>
-                                    </div>
-
                                 </div>
                             </div>
-
                         </div>
                     </div>
                 </main>

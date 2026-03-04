@@ -1,21 +1,40 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Lock, User, CheckCircle, ArrowLeft } from 'lucide-react';
+import { Lock, Mail, CheckCircle, ArrowLeft, UserPlus, LogIn } from 'lucide-react';
 import logoUrl from '../assets/logo.png';
+import { auth } from '../firebase';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 
-const EmployeeLoginPage = ({ onLogin }) => {
+const EmployeeLoginPage = ({ onAuthSuccess }) => {
+    const [isSignUp, setIsSignUp] = useState(false);
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
 
     const handleBack = () => navigate('/');
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
+        setError('');
         setLoading(true);
-        setTimeout(() => {
-            onLogin();
+
+        try {
+            let userCredential;
+            if (isSignUp) {
+                userCredential = await createUserWithEmailAndPassword(auth, email, password);
+            } else {
+                userCredential = await signInWithEmailAndPassword(auth, email, password);
+            }
+            if (onAuthSuccess) onAuthSuccess(userCredential.user);
             navigate('/employee/dashboard');
-        }, 1000);
+        } catch (error) {
+            console.error("Auth Error:", error);
+            setError('Email or password is incorrect');
+        } finally {
+            setLoading(false);
+        }
     };
 
     return (
@@ -43,9 +62,8 @@ const EmployeeLoginPage = ({ onLogin }) => {
                     <div className="bg-white/10 backdrop-blur-md rounded-2xl p-6 border border-white/20 shadow-2xl">
                         <h3 className="text-brand-yellow font-bold text-lg mb-5 uppercase tracking-wider">Your Self-Service Tools</h3>
                         <ul className="space-y-4 font-medium opacity-90">
-                            <li className="flex items-center text-white text-lg"><CheckCircle className="text-brand-yellow mr-3" size={24} /> Clock In / Clock Out</li>
-                            <li className="flex items-center text-white text-lg"><CheckCircle className="text-brand-yellow mr-3" size={24} /> Personal Attendance</li>
-                            <li className="flex items-center text-white text-lg"><CheckCircle className="text-brand-yellow mr-3" size={24} /> Leave Balance</li>
+                            <li className="flex items-center text-white text-lg"><CheckCircle className="text-brand-yellow mr-3" size={24} /> Personal Leave Balances</li>
+                            <li className="flex items-center text-white text-lg"><CheckCircle className="text-brand-yellow mr-3" size={24} /> Company Calendar</li>
                         </ul>
                     </div>
                 </div>
@@ -53,16 +71,28 @@ const EmployeeLoginPage = ({ onLogin }) => {
 
             <div className="md:w-1/2 w-full bg-white dark:bg-gray-800 flex justify-center items-center p-8 transition-colors">
                 <div className="max-w-md w-full animate-[fadeIn_0.5s_ease-out]">
-                    <h2 className="text-4xl font-extrabold text-brand-black dark:text-white mb-2 tracking-tight">Welcome Back</h2>
-                    <p className="text-gray-500 dark:text-gray-400 mb-10 font-medium">Please sign in to access your employee dashboard.</p>
+                    <h2 className="text-4xl font-extrabold text-brand-black dark:text-white mb-2 tracking-tight">
+                        {isSignUp ? "Employee Registration" : "Welcome Back"}
+                    </h2>
+                    <p className="text-gray-500 dark:text-gray-400 mb-10 font-medium">
+                        {isSignUp ? "Create your account to start managing your portal." : "Please sign in to access your employee dashboard."}
+                    </p>
+
+                    {error && (
+                        <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 text-red-700 dark:text-red-400 text-sm font-bold flex items-center shadow-sm rounded-r-lg">
+                            {error}
+                        </div>
+                    )}
 
                     <form onSubmit={handleSubmit} className="space-y-6">
                         <div className="space-y-2">
-                            <label className="text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide">Staff ID</label>
+                            <label className="text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide">Email Address</label>
                             <div className="relative">
-                                <User className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                                <Mail className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
                                 <input
-                                    type="text" required placeholder="e.g. OCT-1025"
+                                    type="email" required placeholder="staff@octa.com"
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
                                     className="w-full pl-12 pr-4 py-3.5 bg-gray-50 dark:bg-gray-700/50 border-2 border-gray-200 dark:border-gray-600 rounded-xl outline-none transition-all text-brand-black dark:text-white placeholder-gray-400 focus:border-brand-yellow dark:focus:border-brand-yellow focus:bg-white dark:focus:bg-gray-700 shadow-sm"
                                 />
                             </div>
@@ -74,17 +104,11 @@ const EmployeeLoginPage = ({ onLogin }) => {
                                 <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
                                 <input
                                     type="password" required placeholder="••••••••"
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
                                     className="w-full pl-12 pr-4 py-3.5 bg-gray-50 dark:bg-gray-700/50 border-2 border-gray-200 dark:border-gray-600 rounded-xl outline-none transition-all text-brand-black dark:text-white placeholder-gray-400 focus:border-brand-yellow dark:focus:border-brand-yellow focus:bg-white dark:focus:bg-gray-700 shadow-sm"
                                 />
                             </div>
-                        </div>
-
-                        <div className="flex items-center justify-between pt-2">
-                            <label className="flex items-center space-x-3 cursor-pointer select-none group">
-                                <input type="checkbox" className="w-5 h-5 rounded border-gray-300 text-brand-yellow focus:ring-brand-yellow transition-colors cursor-pointer" />
-                                <span className="text-sm font-medium text-gray-600 dark:text-gray-400 group-hover:text-gray-900 dark:group-hover:text-gray-300 transition-colors">Remember me</span>
-                            </label>
-                            <a href="#" className="text-sm font-bold hover:underline text-brand-yellow">Forgot password?</a>
                         </div>
 
                         <button
@@ -93,9 +117,26 @@ const EmployeeLoginPage = ({ onLogin }) => {
                         >
                             {loading ? (
                                 <div className="w-6 h-6 border-4 border-brand-black/20 border-t-brand-black rounded-full animate-spin"></div>
-                            ) : "Sign In Securely"}
+                            ) : (
+                                <span className="flex items-center">
+                                    {isSignUp ? <UserPlus className="mr-2" size={20} /> : <LogIn className="mr-2" size={20} />}
+                                    {isSignUp ? "Create Account" : "Sign In Securely"}
+                                </span>
+                            )}
                         </button>
                     </form>
+
+                    <div className="mt-8 text-center">
+                        <p className="text-gray-500 dark:text-gray-400 font-medium">
+                            {isSignUp ? "Already have an account?" : "New to OCTA HR?"}
+                            <button
+                                onClick={() => { setIsSignUp(!isSignUp); setError(''); }}
+                                className="ml-2 text-brand-yellow font-bold hover:underline"
+                            >
+                                {isSignUp ? "Sign In" : "Register Now"}
+                            </button>
+                        </p>
+                    </div>
                 </div>
             </div>
         </div>

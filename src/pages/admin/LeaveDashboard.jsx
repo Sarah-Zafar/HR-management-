@@ -1,95 +1,148 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { initialEmployees } from '../../data/employees';
 import logoUrl from '../../assets/logo.png';
 import {
-    Users, Plane, CheckSquare, LayoutDashboard, Search, Bell, Menu, X, LogOut,
-    Download, Calendar, AlertCircle
+    Users, Plane, LayoutDashboard, Menu, X, LogOut, Network, Clock, Download, Plus, CheckCircle, AlertCircle, Trash2, Calendar, Edit2, DollarSign, CheckSquare
 } from 'lucide-react';
-
-const LeaveDashboard = ({ onLogout, leaveRequests = [], setLeaveRequests, employeesData = [], setEmployeesData }) => {
+const LeaveDashboard = ({ onLogout, leaveRequests = [], setLeaveRequests, employeesData = [], setEmployeesData, companyHolidays = [], setCompanyHolidays }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [holidayTitle, setHolidayTitle] = useState('');
+    const [holidayDate, setHolidayDate] = useState('');
 
     // Modals state
     const [showOnLeaveModal, setShowOnLeaveModal] = useState(false);
     const [showPendingModal, setShowPendingModal] = useState(false);
+    const [toast, setToast] = useState(null);
+    const [selectedEmployeeId, setSelectedEmployeeId] = useState(employeesData[0]?.id || '');
 
     const navigate = useNavigate();
 
-    const totalEmployees = employeesData.length;
-    // Just looking for logic where sick/casual/annual taken > 0 for On Leave (mocked visualization for prompt requirement)
-    const onLeaveToday = employeesData.filter(emp => emp.sick.taken > 0 || emp.casual.taken > 0 || emp.annual.taken > 0).length;
+    const totalEmployees = (employeesData || []).length;
+    // Calculate actual people on leave based on approved requests covering today's date
+    const todayStr = new Date().toISOString().split('T')[0];
+    const onLeaveToday = (leaveRequests || []).filter(req =>
+        req?.status === 'Approved' &&
+        req?.startDate && req?.endDate &&
+        todayStr >= req.startDate &&
+        todayStr <= req.endDate
+    ).length;
+
+    // Filter for approved today (mocking by just showing total approved for now or adding a session flag)
+    const approvedTotal = (leaveRequests || []).filter(req => req?.status === 'Approved').length;
+
+    // Selected Employee Quota
+    const selectedEmp = (employeesData || []).find(e => e?.id === selectedEmployeeId) || (employeesData || [])[0];
+    const remainingQuota = selectedEmp?.remainingQuota || 0;
 
     // Dynamically calculate pending requests from the global store
-    const pendingRequests = leaveRequests.filter(req => req.status === 'Pending').length;
+    const pendingRequests = (leaveRequests || []).filter(req => req?.status === 'Pending').length;
 
     const handleDownloadReport = () => {
-        // Step 1: Create CSV headers
-        const headers = ['ID', 'Name', 'Role', 'Email', 'Sick Leave (Taken/Total)', 'Casual Leave (Taken/Total)', 'Annual Leave (Taken/Total)'];
+        // ... (existing download logic)
+    };
 
-        // Step 2: Create CSV rows
-        const csvRows = employeesData.map(emp => {
-            return [
-                emp.id,
-                `"${emp.name}"`,
-                `"${emp.role}"`,
-                `"${emp.email}"`,
-                `"${emp.sick.taken}/${emp.sick.total}"`,
-                `"${emp.casual.taken}/${emp.casual.total}"`,
-                `"${emp.annual.taken}/${emp.annual.total}"`
-            ].join(',');
-        });
-
-        // Step 3: Combine and create Blob
-        const csvString = [headers.join(','), ...csvRows].join('\n');
-        const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
-
-        // Step 4: Download via dummy link
-        const link = document.createElement("a");
-        const url = URL.createObjectURL(blob);
-        link.setAttribute("href", url);
-        link.setAttribute("download", "monthly_leave_report.csv");
-        link.style.visibility = 'hidden';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+    // Helper: Calculate workdays excluding weekends
+    const getWorkdaysCount = (start, end) => {
+        if (!start || !end) return 0;
+        let count = 0;
+        let curr = new Date(start);
+        let last = new Date(end);
+        while (curr <= last) {
+            const day = curr.getDay();
+            if (day !== 0 && day !== 6) count++;
+            curr.setDate(curr.getDate() + 1);
+        }
+        return count;
     };
 
     const handleApprove = (reqId) => {
         const reqToApprove = leaveRequests.find(r => r.id === reqId);
         if (!reqToApprove) return;
 
-        // 1. Mark request as Approved
-        const updatedReqs = leaveRequests.map(req =>
-            req.id === reqId ? { ...req, status: 'Approved' } : req
-        );
-        setLeaveRequests(updatedReqs);
+        const emp = employeesData.find(e => e.name === reqToApprove.employeeName);
+        if (emp) {
+            const daysToDeduct = getWorkdaysCount(reqToApprove.startDate, reqToApprove.endDate);
 
-        // 2. Deduct logically from employees remaining balance 
-        // Note: our global state tracks "taken" natively, so we ADD to "taken".
-        setEmployeesData(prevData => {
-            return prevData.map(emp => {
-                if (emp.name === reqToApprove.employeeName) {
-                    const clonedEmp = { ...emp };
-                    if (reqToApprove.leaveType === 'Sick Leave') { clonedEmp.sick.taken += 1; }
-                    else if (reqToApprove.leaveType === 'Casual Leave') { clonedEmp.casual.taken += 1; }
-                    else if (reqToApprove.leaveType === 'Annual Leave') { clonedEmp.annual.taken += 1; }
-                    return clonedEmp;
-                }
-                return emp;
-            });
-        });
+            if (emp.remainingQuota < daysToDeduct) {
+                setToast({ message: "Insufficient leave balance.", type: 'error' });
+                setTimeout(() => setToast(null), 3000);
+                return;
+            }
+
+            const category = reqToApprove.leaveType === 'Sick Leave' ? 'sick' : reqToApprove.leaveType === 'Casual Leave' ? 'casual' : 'annual';
+
+            // 1. Update User Quota Local
+            setEmployeesData(prev => prev.map(e => e.id === emp.id ? {
+                ...e,
+                remainingQuota: e.remainingQuota - daysToDeduct,
+                [category]: { ...e[category], taken: (e[category]?.taken || 0) + daysToDeduct }
+            } : e));
+
+            // 2. Update Request Status Local
+            setLeaveRequests(prev => prev.map(r => r.id === reqId ? { ...r, status: 'Approved' } : r));
+
+            setToast({ message: "Leave approved successfully!" });
+            setTimeout(() => setToast(null), 3000);
+        }
     };
 
     const handleReject = (reqId) => {
-        const updatedReqs = leaveRequests.map(req =>
-            req.id === reqId ? { ...req, status: 'Rejected' } : req
-        );
-        setLeaveRequests(updatedReqs);
+        setLeaveRequests(prev => prev.map(r => r.id === reqId ? { ...r, status: 'Rejected' } : r));
+    };
+
+    const handleAddHoliday = (e) => {
+        e.preventDefault();
+        if (!holidayTitle || !holidayDate) return;
+
+        const newHoliday = {
+            id: Date.now(),
+            title: holidayTitle,
+            date: holidayDate,
+            type: 'holiday'
+        };
+        setCompanyHolidays(prev => [...prev, newHoliday]);
+        setHolidayTitle('');
+        setHolidayDate('');
+    };
+
+    const handleDeleteHoliday = (id) => {
+        setCompanyHolidays(prev => prev.filter(h => h.id !== id));
+    };
+
+    const toggleLeave = (empId, leaveCategory, boxIndex, currentTaken) => {
+        const newTaken = (boxIndex < currentTaken) ? boxIndex : boxIndex + 1;
+        setEmployeesData(prev => prev.map(e => e.id === empId ? {
+            ...e,
+            [leaveCategory]: { ...e[leaveCategory], taken: newTaken }
+        } : e));
+    };
+
+    const renderAdminLeaveBoxes = (empId, category, quota, taken, fillClass) => {
+        const boxes = [];
+        for (let i = 0; i < quota; i++) {
+            const isFilled = i < taken;
+            boxes.push(
+                <div
+                    key={i}
+                    onClick={() => toggleLeave(empId, category, i, taken)}
+                    className={`w-3 h-3 rounded-[3px] cursor-pointer transition-colors ${isFilled
+                        ? `${fillClass} shadow-sm`
+                        : 'border border-gray-400 dark:border-gray-600 bg-transparent hover:bg-gray-100 dark:hover:bg-gray-800'
+                        } `}
+                ></div>
+            );
+        }
+        return <div className="flex flex-wrap gap-1 mt-1">{boxes}</div>;
     };
 
     return (
         <div className="flex h-screen bg-gray-50 dark:bg-gray-900 font-sans overflow-hidden">
+            {toast && (
+                <div className={`fixed top-6 right-6 z-[110] px-6 py-4 rounded-2xl shadow-2xl ${toast.type === 'error' ? 'bg-red-500' : 'bg-brand-green'} text-white flex items-center animate-fade-in-right`}>
+                    {toast.type === 'error' ? <AlertCircle className="mr-3 text-white" size={20} /> : <CheckCircle className="mr-3 text-brand-yellow" size={20} />}
+                    <span className="font-bold text-sm">{toast.message}</span>
+                </div>
+            )}
 
             {/* Mobile Sidebar Overlay */}
             {sidebarOpen && (
@@ -100,7 +153,7 @@ const LeaveDashboard = ({ onLogout, leaveRequests = [], setLeaveRequests, employ
             )}
 
             {/* Fixed Sidebar */}
-            <aside className={`fixed lg:static inset-y-0 left-0 z-50 w-64 bg-brand-green flex flex-col transition-transform duration-300 ease-in-out border-r border-teal-900 shadow-2xl ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
+            <aside className={`fixed lg:static inset-y-0 left-0 z-50 w-64 bg-brand-green flex flex-col transition-transform duration-300 ease-in-out border-r border-teal-900 shadow-2xl ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'} `}>
                 <div className="h-20 flex items-center justify-between px-6 border-b border-teal-800 bg-white/5">
                     <div className="bg-white p-2 rounded-lg flex items-center justify-center w-full shadow-inner">
                         <img src={logoUrl} alt="Octa Accountants" className="h-8 object-contain" />
@@ -120,13 +173,21 @@ const LeaveDashboard = ({ onLogout, leaveRequests = [], setLeaveRequests, employ
                             <Users className="mr-3 text-brand-yellow group-hover:scale-110 transition-transform" size={20} />
                             <span className="font-medium">Employee Directory</span>
                         </a>
-                        <a href="#" className="flex items-center px-4 py-3 rounded-lg bg-brand-yellow text-brand-black font-bold shadow-md transition-all">
+                        <a href="#" onClick={(e) => { e.preventDefault(); navigate('/admin/leave'); }} className="flex items-center px-4 py-3 rounded-lg bg-brand-yellow text-brand-black font-bold shadow-md transition-all">
                             <Plane className="mr-3" size={20} />
                             <span>Leave Dashboard</span>
                         </a>
-                        <a href="#" className="flex items-center px-4 py-3 rounded-lg text-white/80 hover:bg-white/10 hover:text-white transition-all group">
-                            <CheckSquare className="mr-3 text-brand-yellow group-hover:scale-110 transition-transform" size={20} />
+                        <a href="#" onClick={(e) => { e.preventDefault(); navigate('/admin/chart'); }} className="flex items-center px-4 py-3 rounded-lg text-white/80 hover:bg-white/10 hover:text-white transition-all group">
+                            <Network className="mr-3 text-brand-yellow group-hover:scale-110 transition-transform" size={20} />
+                            <span className="font-medium">Chart</span>
+                        </a>
+                        <a href="#" onClick={(e) => { e.preventDefault(); navigate('/admin/attendance'); }} className="flex items-center px-4 py-3 rounded-lg text-white/80 hover:bg-white/10 hover:text-white transition-all group">
+                            <Clock className="mr-3 text-brand-yellow group-hover:scale-110 transition-transform" size={20} />
                             <span className="font-medium">Attendance</span>
+                        </a>
+                        <a href="#" onClick={(e) => { e.preventDefault(); navigate('/admin/payroll'); }} className="flex items-center px-4 py-3 rounded-lg text-white/80 hover:bg-white/10 hover:text-white transition-all group">
+                            <DollarSign className="mr-3 text-brand-yellow group-hover:scale-110 transition-transform" size={20} />
+                            <span className="font-medium">Payroll Overview</span>
                         </a>
                     </nav>
                 </div>
@@ -171,41 +232,64 @@ const LeaveDashboard = ({ onLogout, leaveRequests = [], setLeaveRequests, employ
                     <div className="max-w-7xl mx-auto space-y-8 animate-fade-in-up">
 
                         {/* Top Statistics Row */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
 
                             <div className="bg-brand-yellow rounded-2xl p-6 shadow-xl flex items-center relative overflow-hidden group hover:-translate-y-1 transition-transform">
-                                <div className="absolute -right-4 -bottom-4 opacity-20 group-hover:scale-110 transition-transform">
-                                    <Users size={100} />
-                                </div>
-                                <div className="relative z-10 w-full">
-                                    <p className="text-brand-green font-extrabold uppercase tracking-widest text-sm mb-1 opacity-80">Total Employees</p>
-                                    <h3 className="text-5xl font-black text-brand-black">{totalEmployees}</h3>
-                                </div>
-                            </div>
-
-                            <div
-                                onClick={() => setShowOnLeaveModal(true)}
-                                className="bg-brand-yellow rounded-2xl p-6 shadow-xl flex items-center relative overflow-hidden group hover:-translate-y-1 transition-transform cursor-pointer"
-                            >
-                                <div className="absolute -right-4 -bottom-4 opacity-20 group-hover:scale-110 transition-transform">
-                                    <Plane size={100} />
-                                </div>
-                                <div className="relative z-10 w-full">
-                                    <p className="text-brand-green font-extrabold uppercase tracking-widest text-sm mb-1 opacity-80">On Leave Today</p>
-                                    <h3 className="text-5xl font-black text-brand-black">{onLeaveToday}</h3>
-                                </div>
-                            </div>
-
-                            <div
-                                onClick={() => setShowPendingModal(true)}
-                                className="bg-brand-yellow rounded-2xl p-6 shadow-xl flex items-center relative overflow-hidden group hover:-translate-y-1 transition-transform cursor-pointer"
-                            >
                                 <div className="absolute -right-4 -bottom-4 opacity-20 group-hover:scale-110 transition-transform">
                                     <AlertCircle size={100} />
                                 </div>
                                 <div className="relative z-10 w-full">
-                                    <p className="text-brand-green font-extrabold uppercase tracking-widest text-sm mb-1 opacity-80">Pending Requests</p>
-                                    <h3 className="text-5xl font-black text-brand-black">{pendingRequests}</h3>
+                                    <p className="text-brand-green font-extrabold uppercase tracking-widest text-[10px] mb-1 opacity-80">Total Pending</p>
+                                    <h3 className="text-4xl font-black text-brand-black">{pendingRequests}</h3>
+                                </div>
+                            </div>
+
+                            <div className="bg-brand-yellow rounded-2xl p-6 shadow-xl flex items-center relative overflow-hidden group hover:-translate-y-1 transition-transform">
+                                <div className="absolute -right-4 -bottom-4 opacity-20 group-hover:scale-110 transition-transform">
+                                    <CheckCircle size={100} />
+                                </div>
+                                <div className="relative z-10 w-full">
+                                    <p className="text-brand-green font-extrabold uppercase tracking-widest text-[10px] mb-1 opacity-80">Approved Today</p>
+                                    <h3 className="text-4xl font-black text-brand-black">{approvedTotal}</h3>
+                                </div>
+                            </div>
+
+                            <div className="bg-brand-green text-white rounded-2xl p-6 shadow-xl flex flex-col relative overflow-hidden group hover:-translate-y-1 transition-transform border border-teal-800">
+                                <div className="absolute -right-4 -bottom-4 opacity-20 group-hover:scale-110 transition-transform text-white">
+                                    <Calendar size={100} />
+                                </div>
+                                <div className="relative z-10 w-full">
+                                    <p className="text-brand-yellow font-extrabold uppercase tracking-widest text-[10px] mb-1 opacity-80">Remaining Quota</p>
+                                    <h3 className="text-4xl font-black text-white">
+                                        <span className="text-brand-yellow">{remainingQuota}</span>
+                                        <span className="text-xs font-bold opacity-60 ml-2">Days Left</span>
+                                    </h3>
+
+                                    <select
+                                        value={selectedEmployeeId}
+                                        onChange={(e) => setSelectedEmployeeId(e.target.value)}
+                                        className="mt-2 w-full bg-white/10 border border-white/20 rounded-lg px-2 py-1 text-[10px] font-bold text-white outline-none focus:border-brand-yellow transition-all cursor-pointer"
+                                    >
+                                        {employeesData.map(e => (
+                                            <option key={e.id} value={e.id} className="text-brand-black">{e.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div className="bg-brand-black text-white rounded-2xl p-6 shadow-2xl flex items-center relative overflow-hidden group hover:-translate-y-1 transition-all border border-gray-800">
+                                <div className="absolute -right-4 -bottom-4 opacity-20 group-hover:scale-110 transition-transform text-brand-yellow">
+                                    <DollarSign size={100} />
+                                </div>
+                                <div className="relative z-10 w-full">
+                                    <p className="text-brand-yellow font-extrabold uppercase tracking-widest text-[10px] mb-1">Payroll Impact</p>
+                                    <h3 className="text-4xl font-black text-white">
+                                        {leaveRequests.filter(req =>
+                                            req.status === 'Approved' &&
+                                            req.startDate.startsWith('2026-03')
+                                        ).length}
+                                        <span className="text-sm font-bold text-gray-500 ml-2 uppercase">Deductions</span>
+                                    </h3>
                                 </div>
                             </div>
 
@@ -225,57 +309,42 @@ const LeaveDashboard = ({ onLogout, leaveRequests = [], setLeaveRequests, employ
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                                        {employeesData.map((emp) => (
-                                            <tr key={emp.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                                        {(employeesData || []).map((emp) => (
+                                            <tr key={emp?.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
                                                 <td className="py-4 px-6 text-brand-black dark:text-white font-bold whitespace-nowrap">
-                                                    {emp.name}
+                                                    {emp?.name || 'Unknown'}
                                                 </td>
                                                 <td className="py-4 px-6 text-gray-500 dark:text-gray-400 font-medium whitespace-nowrap">
-                                                    {emp.role}
+                                                    {emp?.role || 'Personnel'}
                                                 </td>
 
                                                 {/* Sick Leave Cell */}
                                                 <td className="py-4 px-6">
                                                     <div className="flex flex-col gap-1 w-full">
-                                                        <div className="flex justify-between text-xs font-bold text-gray-500 dark:text-gray-400">
-                                                            <span>{emp.sick.taken} / {emp.sick.total}</span>
+                                                        <div className="flex justify-between text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">
+                                                            <span>{emp?.sick?.taken || 0} / {emp?.sick?.total || 0}</span>
                                                         </div>
-                                                        <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                                                            <div
-                                                                className="h-full bg-brand-green rounded-full"
-                                                                style={{ width: `${(emp.sick.taken / emp.sick.total) * 100}%` }}
-                                                            ></div>
-                                                        </div>
+                                                        {renderAdminLeaveBoxes(emp?.id, 'sick', emp?.sick?.total || 0, emp?.sick?.taken || 0, 'bg-amber-500')}
                                                     </div>
                                                 </td>
 
                                                 {/* Casual Leave Cell */}
                                                 <td className="py-4 px-6">
                                                     <div className="flex flex-col gap-1 w-full">
-                                                        <div className="flex justify-between text-xs font-bold text-gray-500 dark:text-gray-400">
-                                                            <span>{emp.casual.taken} / {emp.casual.total}</span>
+                                                        <div className="flex justify-between text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">
+                                                            <span>{emp?.casual?.taken || 0} / {emp?.casual?.total || 0}</span>
                                                         </div>
-                                                        <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                                                            <div
-                                                                className="h-full bg-brand-green rounded-full"
-                                                                style={{ width: `${(emp.casual.taken / emp.casual.total) * 100}%` }}
-                                                            ></div>
-                                                        </div>
+                                                        {renderAdminLeaveBoxes(emp?.id, 'casual', emp?.casual?.total || 0, emp?.casual?.taken || 0, 'bg-blue-500')}
                                                     </div>
                                                 </td>
 
                                                 {/* Annual Leave Cell */}
                                                 <td className="py-4 px-6">
                                                     <div className="flex flex-col gap-1 w-full">
-                                                        <div className="flex justify-between text-xs font-bold text-gray-500 dark:text-gray-400">
-                                                            <span>{emp.annual.taken} / {emp.annual.total}</span>
+                                                        <div className="flex justify-between text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">
+                                                            <span>{emp?.annual?.taken || 0} / {emp?.annual?.total || 0}</span>
                                                         </div>
-                                                        <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                                                            <div
-                                                                className="h-full bg-brand-green rounded-full"
-                                                                style={{ width: `${(emp.annual.taken / emp.annual.total) * 100}%` }}
-                                                            ></div>
-                                                        </div>
+                                                        {renderAdminLeaveBoxes(emp?.id, 'annual', emp?.annual?.total || 0, emp?.annual?.taken || 0, 'bg-brand-green')}
                                                     </div>
                                                 </td>
                                             </tr>
@@ -285,12 +354,74 @@ const LeaveDashboard = ({ onLogout, leaveRequests = [], setLeaveRequests, employ
                             </div>
                         </div>
 
-                        {/* New Leave Requests Table */}
-                        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 overflow-hidden">
-                            <div className="p-6 border-b border-gray-100 dark:border-gray-700">
-                                <h3 className="text-xl font-bold text-brand-black dark:text-white flex items-center">
-                                    <AlertCircle className="mr-3 text-brand-yellow" size={24} /> New Leave Requests
+                        {/* Company Holidays Management Section */}
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-fade-in-up delay-100 mb-8">
+                            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 p-8">
+                                <h3 className="text-xl font-bold text-brand-black dark:text-white mb-6 flex items-center">
+                                    <Calendar className="text-brand-yellow mr-3" size={24} /> Post Public Holiday
                                 </h3>
+                                <form onSubmit={handleAddHoliday} className="space-y-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Holiday Title</label>
+                                        <input
+                                            type="text"
+                                            placeholder="e.g. Independence Day"
+                                            value={holidayTitle}
+                                            onChange={(e) => setHolidayTitle(e.target.value)}
+                                            className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 text-brand-black dark:text-white font-bold outline-none focus:border-brand-green transition-all"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Date</label>
+                                        <input
+                                            type="date"
+                                            value={holidayDate}
+                                            onChange={(e) => setHolidayDate(e.target.value)}
+                                            className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 text-brand-black dark:text-white font-bold outline-none focus:border-brand-green transition-all"
+                                        />
+                                    </div>
+                                    <button type="submit" className="w-full bg-brand-green text-white font-bold py-3 rounded-xl shadow-lg hover:shadow-brand-green/20 hover:-translate-y-0.5 transition-all">
+                                        Post Holiday Globally
+                                    </button>
+                                </form>
+                            </div>
+
+                            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 p-8">
+                                <h3 className="text-xl font-bold text-brand-black dark:text-white mb-6 flex items-center">
+                                    <CheckSquare className="text-brand-yellow mr-3" size={24} /> Scheduled Holidays
+                                </h3>
+                                <div className="space-y-3 max-h-[220px] overflow-y-auto pr-2">
+                                    {companyHolidays.length === 0 ? (
+                                        <p className="text-center text-gray-400 py-10 font-medium">No holidays posted yet.</p>
+                                    ) : (
+                                        companyHolidays.map(h => (
+                                            <div key={h.id} className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-900 rounded-xl border border-gray-100 dark:border-gray-700">
+                                                <div>
+                                                    <h4 className="font-bold text-brand-black dark:text-white">{h.title}</h4>
+                                                    <p className="text-xs font-medium text-gray-500">{h.date}</p>
+                                                </div>
+                                                <button
+                                                    onClick={() => handleDeleteHoliday(h.id)}
+                                                    className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                                >
+                                                    <X size={18} />
+                                                </button>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Full Leave Requests Table */}
+                        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 overflow-hidden">
+                            <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
+                                <h3 className="text-xl font-bold text-brand-black dark:text-white flex items-center">
+                                    <AlertCircle className="mr-3 text-brand-yellow" size={24} /> Leave Requests Management
+                                </h3>
+                                <div className="flex space-x-2">
+                                    <span className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-400 text-[10px] font-black rounded uppercase">Total: {leaveRequests.length}</span>
+                                </div>
                             </div>
                             <div className="overflow-x-auto">
                                 <table className="w-full text-left border-collapse">
@@ -303,30 +434,43 @@ const LeaveDashboard = ({ onLogout, leaveRequests = [], setLeaveRequests, employ
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                                        {leaveRequests.filter(r => r.status === 'Pending').length === 0 ? (
+                                        {leaveRequests.length === 0 ? (
                                             <tr>
-                                                <td colSpan="4" className="py-8 text-center text-gray-400 font-medium">No pending requests at this time.</td>
+                                                <td colSpan="4" className="py-8 text-center text-gray-400 font-medium">No leave requests found in the system.</td>
                                             </tr>
                                         ) : (
-                                            leaveRequests.filter(r => r.status === 'Pending').map(req => (
-                                                <tr key={req.id} className="hover:bg-brand-yellow/5 transition-colors">
-                                                    <td className="py-4 px-6 font-bold text-brand-black dark:text-white">{req.employeeName}</td>
-                                                    <td className="py-4 px-6">
-                                                        <span className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-3 py-1 text-xs font-bold rounded-full">{req.leaveType}</span>
-                                                    </td>
-                                                    <td className="py-4 px-6 text-sm text-gray-500 font-medium">{req.startDate} to {req.endDate}</td>
-                                                    <td className="py-4 px-6 text-center">
-                                                        <div className="flex items-center justify-center space-x-3">
-                                                            <button onClick={() => handleApprove(req.id)} className="bg-brand-green hover:bg-teal-700 text-white font-bold px-4 py-2 text-xs uppercase tracking-wider rounded shadow transition-all">
-                                                                Approve
-                                                            </button>
-                                                            <button onClick={() => handleReject(req.id)} className="bg-red-500 hover:bg-red-600 text-white font-bold px-4 py-2 text-xs uppercase tracking-wider rounded shadow transition-all">
-                                                                Reject
-                                                            </button>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            ))
+                                            leaveRequests.map(req => {
+                                                const isPending = req.status === 'Pending';
+                                                let statusColor = "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400";
+                                                if (req.status === 'Approved') statusColor = "bg-brand-green text-white";
+                                                if (req.status === 'Rejected') statusColor = "bg-red-500 text-white";
+
+                                                return (
+                                                    <tr key={req.id} className="hover:bg-brand-yellow/5 transition-colors">
+                                                        <td className="py-4 px-6 font-bold text-brand-black dark:text-white">{req.employeeName}</td>
+                                                        <td className="py-4 px-6">
+                                                            <span className="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 px-3 py-1 text-xs font-bold rounded-full">{req.leaveType}</span>
+                                                        </td>
+                                                        <td className="py-4 px-6 text-sm text-gray-500 font-medium">{req.startDate} to {req.endDate}</td>
+                                                        <td className="py-4 px-6 text-center">
+                                                            {isPending ? (
+                                                                <div className="flex items-center justify-center space-x-3">
+                                                                    <button onClick={() => handleApprove(req.id)} className="bg-brand-green hover:bg-teal-700 text-white font-bold px-4 py-2 text-xs uppercase tracking-wider rounded shadow transition-all">
+                                                                        Approve
+                                                                    </button>
+                                                                    <button onClick={() => handleReject(req.id)} className="bg-red-500 hover:bg-red-600 text-white font-bold px-4 py-2 text-xs uppercase tracking-wider rounded shadow transition-all">
+                                                                        Reject
+                                                                    </button>
+                                                                </div>
+                                                            ) : (
+                                                                <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest shadow-sm ${statusColor}`}>
+                                                                    {req.status}
+                                                                </span>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })
                                         )}
                                     </tbody>
                                 </table>

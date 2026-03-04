@@ -1,7 +1,7 @@
 import React from 'react';
-import { Menu, Search, Bell, Clock } from 'lucide-react';
+import { Menu, Search, Bell } from 'lucide-react';
 
-const Header = ({ role, isClockedIn, onToggleSidebar }) => {
+const Header = ({ role, onToggleSidebar }) => {
     const isAdmin = role === 'admin';
 
     return (
@@ -25,13 +25,6 @@ const Header = ({ role, isClockedIn, onToggleSidebar }) => {
             </div>
 
             <div className="flex items-center space-x-4">
-                {/* Clock Status badge for Employee */}
-                {!isAdmin && (
-                    <div className={`hidden md:flex items-center px-3 py-1.5 rounded-full text-sm font-bold border shadow-sm transition-colors ${isClockedIn ? 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:border-green-800' : 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700'}`}>
-                        <Clock size={16} className="mr-1.5" />
-                        {isClockedIn ? 'Clocked In' : 'Clocked Out'}
-                    </div>
-                )}
 
                 <button className="relative p-2 text-gray-400 hover:text-gray-500 dark:hover:text-gray-300 mr-2 lg:mr-8 transition-colors group">
                     <Bell size={24} className="group-hover:scale-110 transition-transform" />
