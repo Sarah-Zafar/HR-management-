@@ -122,7 +122,7 @@ function App() {
     );
 
     return (
-        <BrowserRouter>
+        <BrowserRouter basename="/hms">
             <div className="min-h-screen relative font-sans text-brand-black dark:text-gray-100 transition-colors">
                 {/* Global Theme Toggle */}
                 <button
