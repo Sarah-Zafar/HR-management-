@@ -4,8 +4,10 @@ import logoUrl from '../../assets/logo.png';
 import {
     Users, UserPlus, FileText, CheckCircle, Plane, CheckSquare,
     LayoutDashboard, Search, Bell, Menu, X, LogOut, Network, Clock, DollarSign,
-    Mail, Phone, MapPin, Briefcase, Calendar, ChevronRight, Filter, Download, Save, Edit, FileCode2
+    Mail, Phone, MapPin, Briefcase, Calendar, ChevronRight, Filter, Download, Save, Edit, FileCode2, Trash2
 } from 'lucide-react';
+import { db } from '../../firebase';
+import { collection, addDoc, deleteDoc, doc, updateDoc, setDoc } from 'firebase/firestore';
 const EmployeeDirectory = ({ onLogout, employees = initialEmployees, setEmployees }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [selectedEmp, setSelectedEmp] = useState(null);
@@ -21,32 +23,49 @@ const EmployeeDirectory = ({ onLogout, employees = initialEmployees, setEmployee
 
     const getTierForRole = (role) => {
         if (role === 'Director') return 1;
-        if (['Manager', 'HR Specialist'].includes(role)) return 2;
+        if (['Manager', 'HR Specialist', 'HR Manager'].includes(role)) return 2;
         if (role === 'Supervisor') return 3;
         return 4;
     };
 
-    const handleAddEmployee = (e) => {
+    const handleDeleteEmployee = async (employeeId) => {
+        if (!window.confirm("Permanently delete employee and all related logs?")) return;
+        try {
+            await deleteDoc(doc(db, "employees", employeeId));
+            // Cascade delete to relevant metadata collections
+            await deleteDoc(doc(db, "payroll", employeeId));
+            await deleteDoc(doc(db, "leaves", employeeId));
+            console.log(`Synchronization: Employee ${employeeId} removed from Cloud Roster.`);
+        } catch (error) {
+            console.error("Firebase Deletion Error:", error);
+        }
+    };
+
+    const handleAddEmployee = async (e) => {
         e.preventDefault();
 
         const addedEmp = {
             ...newEmp,
-            id: Date.now(),
             status: 'Active',
             tier: getTierForRole(newEmp.role),
             sick: { total: 8, taken: 0 },
             casual: { total: 5, taken: 0 },
             annual: { total: 10, taken: 0 },
             baseSalary: 5000,
-            remainingQuota: 20,
+            remainingQuota: 23,
             hoursWorked: 164,
             overtimeWorked: 0,
+            supervisorId: 'direct', // Default placement for hierarchy
             createdAt: new Date().toISOString()
         };
 
-        setEmployees(prev => [...prev, addedEmp]);
-        setNewEmp({ name: '', role: '', email: '', joiningDate: '', age: '', qualification: '' });
-        setIsAddModalOpen(false);
+        try {
+            await addDoc(collection(db, 'employees'), addedEmp);
+            setNewEmp({ name: '', role: '', email: '', joiningDate: '', age: '', qualification: '' });
+            setIsAddModalOpen(false);
+        } catch (error) {
+            console.error("Firebase Add Error:", error);
+        }
     };
 
     const handleSavePreview = () => {
@@ -96,7 +115,10 @@ const EmployeeDirectory = ({ onLogout, employees = initialEmployees, setEmployee
                             <Plane className="mr-3 text-brand-yellow group-hover:scale-110 transition-transform" size={20} />
                             <span className="font-medium">Leave Dashboard</span>
                         </a>
-
+                        <a href="#" onClick={(e) => { e.preventDefault(); navigate('/hr-calendar'); }} className="flex items-center px-4 py-3 rounded-lg text-white/80 hover:bg-white/10 hover:text-white transition-all group">
+                            <Calendar className="mr-3 text-brand-yellow group-hover:scale-110 transition-transform" size={20} />
+                            <span className="font-medium">HR Calendar</span>
+                        </a>
                         <a href="#" onClick={(e) => { e.preventDefault(); navigate('/admin/chart'); }} className="flex items-center px-4 py-3 rounded-lg text-white/80 hover:bg-white/10 hover:text-white transition-all group">
                             <Network className="mr-3 text-brand-yellow group-hover:scale-110 transition-transform" size={20} />
                             <span className="font-medium">Chart</span>
@@ -174,8 +196,14 @@ const EmployeeDirectory = ({ onLogout, employees = initialEmployees, setEmployee
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 animate-fade-in-up">
                             {employees.filter(emp => emp.name.toLowerCase().includes(searchQuery.toLowerCase()) || emp.role.toLowerCase().includes(searchQuery.toLowerCase())).map(emp => (
                                 <div key={emp.id} className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 hover:border-brand-green/50 rounded-2xl p-6 flex flex-col items-center justify-center text-center group transition-all hover:-translate-y-1 hover:shadow-xl hover:shadow-brand-green/5 shadow-sm">
-                                    <div className="w-20 h-20 bg-brand-green/10 dark:bg-brand-green/20 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform border border-brand-green/20 dark:border-brand-green/30">
+                                    <div className="w-20 h-20 bg-brand-green/10 dark:bg-brand-green/20 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform border border-brand-green/20 dark:border-brand-green/30 relative">
                                         <Users size={32} className="text-brand-green group-hover:text-teal-700 dark:group-hover:text-brand-yellow transition-colors" />
+                                        <button 
+                                            onClick={(e) => { e.stopPropagation(); handleDeleteEmployee(emp.id); }}
+                                            className="absolute -top-1 -right-1 p-1.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600 shadow-lg"
+                                        >
+                                            <Trash2 size={12} />
+                                        </button>
                                     </div>
                                     <h3 className="text-xl font-bold text-brand-black dark:text-white mb-1 group-hover:text-brand-green dark:group-hover:text-brand-yellow transition-colors">{emp.name}</h3>
                                     <p className="text-brand-green font-bold text-sm tracking-widest uppercase mb-4">{emp.role}</p>

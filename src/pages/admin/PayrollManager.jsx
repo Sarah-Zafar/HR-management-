@@ -98,7 +98,7 @@ const PayrollManager = ({
                                     </td>
                                     <td className="py-6 px-8 text-right">
                                         <div className="inline-block bg-brand-yellow/10 border border-brand-yellow/20 px-4 py-2 rounded-xl text-brand-yellow font-black text-lg">
-                                            ${data.netSalary.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            Rs. {new Intl.NumberFormat('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(data.netSalary)}
                                         </div>
                                     </td>
                                 </tr>
@@ -135,6 +135,9 @@ const PayrollManager = ({
                     </button>
                     <button onClick={() => navigate('/admin/leave')} className="flex items-center w-full px-4 py-3 rounded-lg text-white/80 hover:bg-white/10 transition-all">
                         <Plane className="mr-3 text-brand-yellow" size={20} /> <span className="font-medium">Leave Dashboard</span>
+                    </button>
+                    <button onClick={() => navigate('/hr-calendar')} className="flex items-center w-full px-4 py-3 rounded-lg text-white/80 hover:bg-white/10 transition-all">
+                        <Calendar className="mr-3 text-brand-yellow" size={20} /> <span className="font-medium">HR Calendar</span>
                     </button>
                     <button onClick={() => navigate('/admin/chart')} className="flex items-center w-full px-4 py-3 rounded-lg text-white/80 hover:bg-white/10 transition-all">
                         <Network className="mr-3 text-brand-yellow" size={20} /> <span className="font-medium">Chart</span>

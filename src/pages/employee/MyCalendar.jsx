@@ -1,32 +1,64 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
     Clock, Plane, Calendar as CalendarIcon, Send, Building2, CheckSquare, X, Menu, LogOut, LayoutDashboard, DollarSign, Briefcase, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import logoUrl from '../../assets/logo.png';
-import { getEventsForDay } from '../../utils/calendarEvents';
+import { db } from '../../firebase';
+import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 
-const MyCalendar = ({ onLogout, leaveRequests = [], companyHolidays = [], employeesData = [] }) => {
+const MyCalendar = ({ onLogout, leaveRequests = [], companyHolidays = [], employeesData = [], user }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [currentDate, setCurrentDate] = useState(new Date());
     const [showModal, setShowModal] = useState(false);
     const [selectedDayEvents, setSelectedDayEvents] = useState([]);
     const [selectedDateFormatted, setSelectedDateFormatted] = useState('');
+    const [officialEvents, setOfficialEvents] = useState([]);
     const navigate = useNavigate();
+
+    React.useEffect(() => {
+        const q = query(collection(db, 'official_calendar_events'), orderBy('start', 'asc'));
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const list = snapshot.docs.map(doc => {
+                const data = doc.data();
+                return {
+                    id: doc.id,
+                    ...data,
+                    startDate: data.start?.toDate ? data.start.toDate() : new Date(),
+                    endDate: data.end?.toDate ? data.end.toDate() : new Date()
+                };
+            });
+            setOfficialEvents(list);
+        });
+        return () => unsubscribe();
+    }, []);
 
     // The current logged-in employee name (mocked as the first employee for this demo session)
     const me = (employeesData || []).find(e => e.id === user?.uid || e.id === 1) || (employeesData || [])[0];
     const currentEmployeeName = me?.name || '';
 
-    const getMergedEventsForDay = (day, month, year) => {
-        const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const getMergedEventsForDay = (day, m, y) => {
+        const year = y || currentDate.getFullYear();
+        const month = (m !== undefined) ? m : currentDate.getMonth();
+        const cellDate = new Date(year, month, day);
+        const cellDateStr = cellDate.toDateString();
+        const dateKeyStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
-        // 1. Get static/mock events
-        const staticEvents = getEventsForDay(day, month, year) || [];
+        // 1. Get Official Firestore Events
+        const official = officialEvents.filter(evt => {
+            if (!evt.startDate) return false;
+            return evt.startDate.toDateString() === cellDateStr;
+        }).map(evt => ({
+            id: evt.id,
+            title: evt.title,
+            type: evt.category?.toLowerCase() || 'meeting',
+            time: evt.startDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            description: evt.description
+        }));
 
-        // 2. Get company holidays
+        // 2. Get company holidays (legacy support if still used)
         const holidayEvents = (companyHolidays || [])
-            .filter(h => h?.date === dateStr)
+            .filter(h => h?.date === dateKeyStr)
             .map(h => ({ title: h?.title || 'Holiday', type: 'holiday', time: 'All Day' }));
 
         // 3. Get approved leaves for THIS employee
@@ -37,9 +69,9 @@ const MyCalendar = ({ onLogout, leaveRequests = [], companyHolidays = [], employ
                 dateStr >= req?.startDate &&
                 dateStr <= req?.endDate
             )
-            .map(req => ({ title: `On Leave: ${req?.leaveType || 'General'}`, type: 'leave', time: 'All Day' }));
+            .map(req => ({ title: `Member Leave: ${req?.leaveType || 'General'}`, type: 'leave', time: 'All Day' }));
 
-        return [...staticEvents, ...holidayEvents, ...leaveEvents];
+        return [...official, ...holidayEvents, ...leaveEvents];
     };
 
     const handleLogout = () => {
@@ -75,14 +107,23 @@ const MyCalendar = ({ onLogout, leaveRequests = [], companyHolidays = [], employ
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const monthName = currentDate.toLocaleString('default', { month: 'long', year: 'numeric' });
 
-    // Generating calendar days
-    const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
-    const startDayOfWeek = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay();
+    // Generating calendar days with strict 42-cell grid
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const firstDayOfMonth = new Date(year, month, 1).getDay();
 
-    const blanks = Array.from({ length: startDayOfWeek }).map((_, i) => i);
-    const monthDays = Array.from({ length: daysInMonth }).map((_, i) => i + 1);
-    const totalSlots = startDayOfWeek + daysInMonth;
-    const endBlanks = Array.from({ length: totalSlots % 7 === 0 ? 0 : 7 - (totalSlots % 7) }).map((_, i) => i);
+    const allCells = [];
+    for (let i = 0; i < firstDayOfMonth; i++) {
+        allCells.push({ type: 'blank', key: `blank-${i}` });
+    }
+    for (let d = 1; d <= daysInMonth; d++) {
+        allCells.push({ type: 'day', day: d, key: `day-${d}` });
+    }
+    const remaining = 42 - allCells.length;
+    for (let i = 0; i < remaining; i++) {
+        allCells.push({ type: 'blank', key: `next-${i}` });
+    }
 
     return (
         <div className="flex h-screen bg-brand-black dark:bg-gray-900 transition-colors font-sans overflow-hidden">
@@ -202,20 +243,21 @@ const MyCalendar = ({ onLogout, leaveRequests = [], companyHolidays = [], employ
                                 ))}
                             </div>
 
-                            {/* Calendar Grid */}
-                            <div className="flex-1 grid grid-cols-7 grid-rows-5 bg-gray-50 dark:bg-gray-900 border-b border-gray-100 dark:border-gray-700">
-                                {blanks.map(blank => (
-                                    <div key={`blank-${blank}`} className="border-r border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/30 p-2 min-h-[120px]"></div>
-                                ))}
+                            {/* Calendar Grid (6 rows ensure 31-day months render fully) */}
+                            <div className="flex-1 grid grid-cols-7 grid-rows-6 bg-gray-50 dark:bg-gray-900 border-b border-gray-100 dark:border-gray-700">
+                                {allCells.map(cell => {
+                                    if (cell.type === 'blank') {
+                                        return <div key={cell.key} className="border-r border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/30 p-2 min-h-[120px]"></div>;
+                                    }
 
-                                {monthDays.map(day => {
+                                    const day = cell.day;
                                     const events = getMergedEventsForDay(day, currentDate.getMonth(), currentDate.getFullYear());
                                     const today = new Date();
                                     const isToday = day === today.getDate() && currentDate.getMonth() === today.getMonth() && currentDate.getFullYear() === today.getFullYear();
 
                                     return (
                                         <div
-                                            key={day}
+                                            key={cell.key}
                                             onClick={() => handleDayClick(day)}
                                             className={`border-r border-b border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-800 p-2 min-h-[120px] transition-colors relative group hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer ${isToday ? 'bg-brand-yellow/5 dark:bg-brand-yellow/10 ring-2 ring-inset ring-brand-yellow' : ''}`}
                                         >
@@ -226,7 +268,7 @@ const MyCalendar = ({ onLogout, leaveRequests = [], companyHolidays = [], employ
                                             </div>
 
                                             <div className="space-y-1">
-                                                {events.map((evt, idx) => {
+                                                {(events || []).map((evt, idx) => {
                                                     let colorClasses = "";
                                                     if (evt.type === 'meeting') colorClasses = "bg-brand-yellow/20 text-yellow-800 dark:text-brand-yellow border border-brand-yellow/30";
                                                     if (evt.type === 'holiday') colorClasses = "bg-brand-green text-white border border-teal-600 shadow-sm";
@@ -236,21 +278,16 @@ const MyCalendar = ({ onLogout, leaveRequests = [], companyHolidays = [], employ
                                                     return (
                                                         <div key={idx} className={`px-2 py-1.5 rounded text-xs font-bold truncate transition-all hover:scale-[1.02] hover:shadow-md ${colorClasses}`} title={`${evt.time} - ${evt.title}`}>
                                                             <div className="hidden sm:inline-block opacity-75 mr-1 font-medium text-[10px] uppercase">
-                                                                {evt.time.split(' ')[0]}
+                                                                {evt?.time?.split(' ')[0] || ''}
                                                             </div>
                                                             {evt.title}
                                                         </div>
-                                                    )
+                                                    );
                                                 })}
                                             </div>
                                         </div>
-                                    )
+                                    );
                                 })}
-
-                                {/* Fill remaining slots for visual perfection */}
-                                {endBlanks.map((_, idx) => (
-                                    <div key={`end-blank-${idx}`} className="border-r border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/30 p-2 min-h-[120px]"></div>
-                                ))}
                             </div>
                         </div>
 

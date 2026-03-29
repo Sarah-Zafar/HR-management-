@@ -4,6 +4,8 @@ import logoUrl from '../../assets/logo.png';
 import {
     Users, Plane, LayoutDashboard, Menu, X, LogOut, Network, Clock, Settings, Calendar, ChevronDown, CheckCircle, AlertCircle, FileText, Save, DollarSign
 } from 'lucide-react';
+import { db } from '../../firebase';
+import { doc, setDoc } from 'firebase/firestore';
 
 const AttendanceManagement = ({
     onLogout,
@@ -46,30 +48,40 @@ const AttendanceManagement = ({
         return h * 60 + m;
     };
 
-    // Helper: Calculate Banking Hours based on Duration
+    // New Helper: Format 24h (HH:mm) to 12h (hh:mm AM/PM)
+    const formatTime12 = (t) => {
+        if (!t) return '--';
+        const [h, m] = t.split(':').map(Number);
+        const ampm = h >= 12 ? 'PM' : 'AM';
+        const h12 = h % 12 || 12;
+        return `${h12.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')} ${ampm}`;
+    };
+
+    // Helper: Convert 'hh:mm AM/PM' to decimal hours
+    const calculateHours = (timeStr) => {
+        if (!timeStr) return 0;
+        const [time, period] = timeStr.split(' ');
+        let [h, m] = time.split(':').map(Number);
+        if (period === 'PM' && h < 12) h += 12;
+        if (period === 'AM' && h === 12) h = 0;
+        return h + (m / 60);
+    };
+
+    // Helper: Calculate Banking Hours based on Duration (Decimal)
     const calculateBanking = (clockIn, clockOut) => {
         if (!clockIn || !clockOut) return { display: '--', value: 0, label: 'MISSING' };
 
-        const inMins = parseTime(clockIn);
-        const outMins = parseTime(clockOut);
+        const workedH = calculateHours(clockOut) - calculateHours(clockIn);
+        const standardH = calculateHours(standardEnd) - calculateHours(standardStart);
+        const diffH = workedH - standardH;
 
-        // Duration worked
-        const workedMins = outMins - inMins;
-
-        // Standard duration from header inputs
-        const stdInMins = parseTime(standardStart);
-        const stdOutMins = parseTime(standardEnd);
-        const standardMins = stdOutMins - stdInMins;
-
-        const diff = workedMins - standardMins;
-
-        const sign = diff >= 0 ? '+' : '-';
-        const absMins = Math.abs(diff);
+        const sign = diffH >= 0 ? '+' : '-';
+        const absMins = Math.round(Math.abs(diffH) * 60);
         const h = Math.floor(absMins / 60);
         const m = absMins % 60;
 
         const display = `${sign}${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
-        return { display, value: diff, label: diff < 0 ? 'Bank Out' : 'Bank In' };
+        return { display, value: diffH * 60, label: diffH < 0 ? 'Bank Out' : 'Bank In' };
     };
 
     // Staff vs Management
@@ -103,7 +115,7 @@ const AttendanceManagement = ({
             const date = new Date(y, m, 1);
             while (date.getMonth() === m) {
                 days.push({
-                    day: date.toLocaleDateString('en-US', { weekday: 'long' }),
+                    day: date.toLocaleDateString('en-PK', { weekday: 'long' }),
                     dateStr: `${monthName} ${date.getDate()}`,
                     key: `${y}-${(m + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`
                 });
@@ -119,7 +131,7 @@ const AttendanceManagement = ({
                 const d = startD + i;
                 const dummyDate = new Date(parseInt(yearPart), m, d);
                 days.push({
-                    day: dummyDate.toLocaleDateString('en-US', { weekday: 'long' }),
+                    day: dummyDate.toLocaleDateString('en-PK', { weekday: 'long' }),
                     dateStr: `${mName} ${d}`,
                     key: `${yearPart}-${(m + 1).toString().padStart(2, '0')}-${d.toString().padStart(2, '0')}`
                 });
@@ -142,12 +154,30 @@ const AttendanceManagement = ({
         });
     };
 
-    const handleSaveData = () => {
+    const handleSaveData = async () => {
         setIsLoadingLocal(true);
-        setTimeout(() => {
-            showToast("All attendance data saved locally.");
+        console.log("Syncing Attendance to Firebase...");
+        try {
+            // 1. Sync Standard Shift Settings
+            await setDoc(doc(db, 'settings', 'attendance_config'), {
+                standardStart,
+                standardEnd,
+                updatedAt: new Date()
+            }, { merge: true });
+
+            // 2. Sync Manual Entries
+            await setDoc(doc(db, 'attendance', 'manual_logs'), {
+                entries: manualEntries,
+                updatedAt: new Date()
+            }, { merge: true });
+
+            showToast("Cloud Sync Successful!");
+        } catch (error) {
+            console.error("Firebase Sync Error:", error);
+            showToast("Sync Failed: Database Error", "error");
+        } finally {
             setIsLoadingLocal(false);
-        }, 800);
+        }
     };
 
     const [isLoadingLocal, setIsLoadingLocal] = useState(false);
@@ -177,6 +207,9 @@ const AttendanceManagement = ({
                     </button>
                     <button onClick={() => navigate('/admin/leave')} className="flex items-center w-full px-4 py-3 rounded-lg text-white/80 hover:bg-white/10 transition-all">
                         <Plane className="mr-3 text-brand-yellow" size={20} /> <span className="font-medium">Leave Dashboard</span>
+                    </button>
+                    <button onClick={() => navigate('/hr-calendar')} className="flex items-center w-full px-4 py-3 rounded-lg text-white/80 hover:bg-white/10 transition-all">
+                        <Calendar className="mr-3 text-brand-yellow" size={20} /> <span className="font-medium">HR Calendar</span>
                     </button>
                     <button onClick={() => navigate('/admin/chart')} className="flex items-center w-full px-4 py-3 rounded-lg text-white/80 hover:bg-white/10 transition-all">
                         <Network className="mr-3 text-brand-yellow" size={20} /> <span className="font-medium">Chart</span>
@@ -219,24 +252,50 @@ const AttendanceManagement = ({
                                     <p className="text-[10px] font-black text-brand-yellow uppercase tracking-[0.3em] mb-3 flex items-center">
                                         <div className="w-4 h-[1px] bg-brand-yellow mr-2"></div> Standard Start
                                     </p>
-                                    <input
-                                        type="time"
-                                        value={standardStart}
-                                        onChange={(e) => setStandardStart(e.target.value)}
-                                        className="bg-transparent border-none text-2xl font-black text-white outline-none focus:text-brand-yellow transition-colors cursor-pointer"
-                                    />
+                                    <div className="flex gap-4">
+                                        <div className="bg-white/5 border border-white/10 rounded-2xl px-4 py-2 flex items-center group/input focus-within:border-brand-yellow/50 transition-all">
+                                            <input
+                                                type="text"
+                                                value={(standardStart || "03:00 AM").split(' ')[0]}
+                                                onChange={(e) => setStandardStart(`${e.target.value} ${(standardStart || "AM").split(' ')[1]}`)}
+                                                className="bg-transparent border-none text-2xl font-black text-white w-20 outline-none text-center"
+                                                placeholder="00:00"
+                                            />
+                                            <select 
+                                                value={(standardStart || "AM").split(' ')[1]}
+                                                onChange={(e) => setStandardStart(`${(standardStart || "03:00").split(' ')[0]} ${e.target.value}`)}
+                                                className="bg-transparent border-none text-brand-yellow font-black text-sm outline-none cursor-pointer appearance-none px-2"
+                                            >
+                                                <option className="bg-brand-black" value="AM">AM</option>
+                                                <option className="bg-brand-black" value="PM">PM</option>
+                                            </select>
+                                        </div>
+                                    </div>
                                 </div>
                                 <div className="h-16 w-[1px] bg-gray-700/50"></div>
                                 <div>
                                     <p className="text-[10px] font-black text-brand-yellow uppercase tracking-[0.3em] mb-3 flex items-center">
                                         <div className="w-4 h-[1px] bg-brand-yellow mr-2"></div> Standard End
                                     </p>
-                                    <input
-                                        type="time"
-                                        value={standardEnd}
-                                        onChange={(e) => setStandardEnd(e.target.value)}
-                                        className="bg-transparent border-none text-2xl font-black text-white outline-none focus:text-brand-yellow transition-colors cursor-pointer"
-                                    />
+                                    <div className="flex gap-4">
+                                        <div className="bg-white/5 border border-white/10 rounded-2xl px-4 py-2 flex items-center group/input focus-within:border-brand-yellow/50 transition-all">
+                                            <input
+                                                type="text"
+                                                value={(standardEnd || "05:00 PM").split(' ')[0]}
+                                                onChange={(e) => setStandardEnd(`${e.target.value} ${(standardEnd || "PM").split(' ')[1]}`)}
+                                                className="bg-transparent border-none text-2xl font-black text-white w-20 outline-none text-center"
+                                                placeholder="00:00"
+                                            />
+                                            <select 
+                                                value={(standardEnd || "PM").split(' ')[1]}
+                                                onChange={(e) => setStandardEnd(`${(standardEnd || "05:00").split(' ')[0]} ${e.target.value}`)}
+                                                className="bg-transparent border-none text-brand-yellow font-black text-sm outline-none cursor-pointer appearance-none px-2"
+                                            >
+                                                <option className="bg-brand-black" value="AM">AM</option>
+                                                <option className="bg-brand-black" value="PM">PM</option>
+                                            </select>
+                                        </div>
+                                    </div>
                                 </div>
                                 <div className="hidden md:flex items-center ml-4 bg-white/5 px-6 py-3 rounded-2xl border border-white/5">
                                     <AlertCircle className="text-brand-yellow mr-3" size={20} />
@@ -354,24 +413,44 @@ const AttendanceManagement = ({
                                                                     {isOnLeave || isWeekend ? (
                                                                         <div className="text-[10px] font-bold text-gray-300 uppercase tracking-widest">{isWeekend ? 'Rest Day' : 'Leave Active'}</div>
                                                                     ) : (
-                                                                        <input
-                                                                            type="time"
-                                                                            value={row?.clockIn || ''}
-                                                                            onChange={(e) => handleEntryChange(emp?.name, row?.key, 'clockIn', e.target.value)}
-                                                                            className="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl px-5 py-3 text-sm font-black text-gray-600 dark:text-gray-400 focus:border-brand-green focus:bg-white outline-none transition-all cursor-pointer hover:shadow-md hover:scale-110 active:scale-95 transition-all"
-                                                                        />
+                                                                        <div className="flex items-center gap-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl px-3 py-2 group/time hover:shadow-md transition-all">
+                                                                            <input
+                                                                                type="text"
+                                                                                value={(row?.clockIn || "09:00 AM").split(' ')[0]}
+                                                                                onChange={(e) => handleEntryChange(emp?.name, row?.key, 'clockIn', `${e.target.value} ${(row?.clockIn || "AM").split(' ')[1]}`)}
+                                                                                className="bg-transparent border-none text-sm font-black text-brand-yellow w-12 outline-none text-center"
+                                                                            />
+                                                                            <select 
+                                                                                value={(row?.clockIn || "AM").split(' ')[1]}
+                                                                                onChange={(e) => handleEntryChange(emp?.name, row?.key, 'clockIn', `${(row?.clockIn || "09:00").split(' ')[0]} ${e.target.value}`)}
+                                                                                className="bg-transparent border-none text-[10px] font-black text-gray-400 outline-none cursor-pointer uppercase"
+                                                                            >
+                                                                                <option value="AM">AM</option>
+                                                                                <option value="PM">PM</option>
+                                                                            </select>
+                                                                        </div>
                                                                     )}
                                                                 </td>
                                                                 <td className="py-7 px-8 text-center">
                                                                     {isOnLeave || isWeekend ? (
                                                                         <div className="text-[10px] font-bold text-gray-300 uppercase tracking-widest">-- : --</div>
                                                                     ) : (
-                                                                        <input
-                                                                            type="time"
-                                                                            value={row?.clockOut || ''}
-                                                                            onChange={(e) => handleEntryChange(emp?.name, row?.key, 'clockOut', e.target.value)}
-                                                                            className="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl px-5 py-3 text-sm font-black text-gray-600 dark:text-gray-400 focus:border-brand-green focus:bg-white outline-none transition-all cursor-pointer hover:shadow-md hover:scale-110 active:scale-95 transition-all"
-                                                                        />
+                                                                        <div className="flex items-center gap-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl px-3 py-2 group/time hover:shadow-md transition-all">
+                                                                            <input
+                                                                                type="text"
+                                                                                value={(row?.clockOut || "05:00 PM").split(' ')[0]}
+                                                                                onChange={(e) => handleEntryChange(emp?.name, row?.key, 'clockOut', `${e.target.value} ${(row?.clockOut || "PM").split(' ')[1]}`)}
+                                                                                className="bg-transparent border-none text-sm font-black text-brand-yellow w-12 outline-none text-center"
+                                                                            />
+                                                                            <select 
+                                                                                value={(row?.clockOut || "PM").split(' ')[1]}
+                                                                                onChange={(e) => handleEntryChange(emp?.name, row?.key, 'clockOut', `${(row?.clockOut || "05:00").split(' ')[0]} ${e.target.value}`)}
+                                                                                className="bg-transparent border-none text-[10px] font-black text-gray-400 outline-none cursor-pointer uppercase"
+                                                                            >
+                                                                                <option value="AM">AM</option>
+                                                                                <option value="PM">PM</option>
+                                                                            </select>
+                                                                        </div>
                                                                     )}
                                                                 </td>
                                                                 <td className="py-7 px-10 text-right">

@@ -9,6 +9,7 @@ import EmployeeDirectory from './pages/admin/EmployeeDirectory';
 import LeaveDashboard from './pages/admin/LeaveDashboard';
 import OrgChart from './pages/admin/OrgChart';
 import AttendanceManagement from './pages/admin/AttendanceManagement';
+import CalendarManager from './pages/admin/CalendarManager';
 import PayrollManager from './pages/admin/PayrollManager';
 import EmployeeProfile from './pages/admin/EmployeeProfile';
 import EmployeeDashboard from './pages/employee/EmployeeDashboard';
@@ -89,9 +90,38 @@ function App() {
     ]);
     const [attendanceData, setAttendanceData] = useState([]);
 
-    // Centralized Attendance Settings
-    const [standardStart, setStandardStart] = useState("09:00");
-    const [standardEnd, setStandardEnd] = useState("17:00");
+    // Centralized Attendance Settings (12-Hour Format Strings)
+    const [standardStart, setStandardStart] = useState("09:00 AM");
+    const [standardEnd, setStandardEnd] = useState("05:00 PM");
+
+    useEffect(() => {
+        const unsubscribe = onSnapshot(doc(db, 'settings', 'attendance_config'), (snapshot) => {
+            if (snapshot.exists()) {
+                const data = snapshot.data();
+                if (data.standardStart) setStandardStart(data.standardStart);
+                if (data.standardEnd) setStandardEnd(data.standardEnd);
+            }
+        });
+        return () => unsubscribe();
+    }, []);
+
+    useEffect(() => {
+        const q = query(collection(db, 'employees'));
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            if (list.length > 0) setEmployeesData(list);
+        });
+        return () => unsubscribe();
+    }, []);
+
+    useEffect(() => {
+        const unsubscribe = onSnapshot(doc(db, 'attendance', 'manual_logs'), (snapshot) => {
+            if (snapshot.exists()) {
+                setManualEntries(snapshot.data().entries || {});
+            }
+        });
+        return () => unsubscribe();
+    }, []);
 
     const toggleDarkMode = () => {
         setIsDarkMode(!isDarkMode);
@@ -270,6 +300,21 @@ function App() {
                                     setEmployeesData={setEmployeesData}
                                     companyHolidays={companyHolidays}
                                     setCompanyHolidays={setCompanyHolidays}
+                                />
+                            ) : (
+                                <Navigate to="/admin/login" replace />
+                            )
+                        }
+                    />
+                    <Route
+                        path="/hr-calendar"
+                        element={
+                            user && userRole === 'admin' ? (
+                                <CalendarManager
+                                    onLogout={handleLogout}
+                                    employeesData={employeesData}
+                                    leaveRequests={leaveRequests}
+                                    companyHolidays={companyHolidays}
                                 />
                             ) : (
                                 <Navigate to="/admin/login" replace />

@@ -1,14 +1,27 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import logoUrl from '../../assets/logo.png';
-import {
-    Users, Plane, LayoutDashboard, Menu, X, LogOut, Network, Edit2, Shield, User, Briefcase, Save, Clock, DollarSign, Crown, CheckCircle
+import { db } from '../../firebase';
+import { collection, onSnapshot, query } from 'firebase/firestore';
+import { 
+    Users, Plane, LayoutDashboard, Menu, X, LogOut, Network, Edit2, Shield, User, Briefcase, Save, Clock, DollarSign, Crown, CheckCircle, Calendar 
 } from 'lucide-react';
-const OrgChart = ({ onLogout, employeesData = [], setEmployeesData }) => {
+
+const OrgChart = ({ onLogout, employeesData: propEmployees = [] }) => {
+    const [employeesData, setEmployeesDataLocal] = useState(propEmployees);
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [editingEmployee, setEditingEmployee] = useState(null);
     const [toast, setToast] = useState(null);
     const navigate = useNavigate();
+
+    useEffect(() => {
+        const q = query(collection(db, 'employees'));
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            if (list.length > 0) setEmployeesDataLocal(list);
+        });
+        return () => unsubscribe();
+    }, []);
 
     // 4-Tier Roles mapping
     const DIRECTOR_ROLES = ['Director'];
@@ -43,17 +56,21 @@ const OrgChart = ({ onLogout, employeesData = [], setEmployeesData }) => {
         return 4;
     };
 
-    const handleUpdateEmployee = (e) => {
+    const handleUpdateEmployee = async (e) => {
         e.preventDefault();
         const updated = {
             ...editingEmployee,
             tier: getTierForRole(editingEmployee.role)
         };
 
-        setEmployeesData(prev => prev.map(emp => emp.id === updated.id ? updated : emp));
-        setEditingEmployee(null);
-        setToast({ message: `${editingEmployee.name} updated successfully!` });
-        setTimeout(() => setToast(null), 3000);
+        try {
+            await updateDoc(doc(db, 'employees', editingEmployee.id), updated);
+            setEditingEmployee(null);
+            setToast({ message: `${editingEmployee.name} updated successfully!` });
+            setTimeout(() => setToast(null), 3000);
+        } catch (error) {
+            console.error("Update Error:", error);
+        }
     };
 
     const TierSection = ({ title, data, tierId }) => (
@@ -151,6 +168,10 @@ const OrgChart = ({ onLogout, employeesData = [], setEmployeesData }) => {
                         <button onClick={() => navigate('/admin/leave')} className="flex items-center w-full px-4 py-3 rounded-lg text-white/80 hover:bg-white/10 transition-all group text-left">
                             <Plane className="mr-3 text-brand-yellow group-hover:scale-110 transition-transform" size={20} />
                             <span className="font-medium">Leave Dashboard</span>
+                        </button>
+                        <button onClick={() => navigate('/hr-calendar')} className="flex items-center w-full px-4 py-3 rounded-lg text-white/80 hover:bg-white/10 transition-all group text-left">
+                            <Calendar className="mr-3 text-brand-yellow group-hover:scale-110 transition-transform" size={20} />
+                            <span className="font-medium">HR Calendar</span>
                         </button>
                         <button className="flex items-center w-full px-4 py-3 rounded-lg bg-brand-yellow text-brand-black font-bold shadow-md text-left">
                             <Network className="mr-3" size={20} />

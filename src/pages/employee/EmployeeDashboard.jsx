@@ -1,10 +1,11 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { db } from '../../firebase';
+import { collection, query, orderBy, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 import {
     Clock, Plane, Calendar, Send, Building2, CheckSquare, X, Menu, LogOut, LayoutDashboard, DollarSign, Bell, UserCheck, Briefcase, Shield
 } from 'lucide-react';
 import logoUrl from '../../assets/logo.png';
-import { getUpcomingEvents } from '../../utils/calendarEvents';
 import TodoList from '../../components/TodoList';
 import PersonalCalendar from '../../components/PersonalCalendar';
 
@@ -44,10 +45,12 @@ const calculateMonthlyPayroll = (emp, attendance = [], holidays = []) => {
 const EmployeeDashboard = ({ onLogout, user, leaveRequests = [], employeesData = [], companyHolidays = [], attendanceData = [], announcements = [] }) => {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [activeTab, setActiveTab] = useState('dashboard');
-    const [showReminder, setShowReminder] = useState(true);
+    const [unreadNotifications, setUnreadNotifications] = useState(false);
+    const [notifList, setNotifList] = useState([]);
+    const [events, setEvents] = useState([]);
 
     const navigate = useNavigate();
-    const upcomingEvents = getUpcomingEvents(3);
+    const upcomingEvents = events.slice(0, 3);
 
     // Identity Link: Find employee matching the firebase user email
     const me = useMemo(() => {
@@ -60,6 +63,46 @@ const EmployeeDashboard = ({ onLogout, user, leaveRequests = [], employeesData =
     const sick = me?.sick || { taken: 0, total: 8 };
     const annual = me?.annual || { taken: 0, total: 10 };
     const casual = me?.casual || { taken: 0, total: 5 };
+
+    const [unreadCount, setUnreadCount] = useState(0);
+    const [isNotifDropdownOpen, setIsNotifDropdownOpen] = useState(false);
+
+    useEffect(() => {
+        const q = query(collection(db, 'notifications'), orderBy('timestamp', 'desc'));
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            const unread = list.filter(n => !n.isRead).length;
+            setUnreadCount(unread);
+            setUnreadNotifications(unread > 0);
+            setNotifList(list);
+        });
+        return () => unsubscribe();
+    }, []);
+
+    const markAsRead = async (notifId) => {
+        try {
+            await updateDoc(doc(db, 'notifications', notifId), { isRead: true });
+        } catch (error) {
+            console.error("Error marking as read:", error);
+        }
+    };
+
+    useEffect(() => {
+        const q = query(collection(db, 'official_calendar_events'), orderBy('start', 'asc'));
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const list = snapshot.docs.map(doc => {
+                const data = doc.data();
+                return {
+                    id: doc.id,
+                    ...data,
+                    date: data.start?.toDate ? data.start.toDate() : new Date(),
+                    type: data.category?.toLowerCase() || 'meeting'
+                };
+            });
+            setEvents(list);
+        });
+        return () => unsubscribe();
+    }, []);
 
     // Payroll Data for current month
     const payrollData = useMemo(() => {
@@ -205,7 +248,9 @@ const EmployeeDashboard = ({ onLogout, user, leaveRequests = [], employeesData =
                                 </div>
                                 <div className="mt-8">
                                     <p className="text-gray-500 text-[10px] font-black uppercase tracking-widest mb-1">Estimated Net Pay (March)</p>
-                                    <p className="text-4xl font-black text-white">${payrollData ? payrollData.netSalary.toLocaleString(undefined, { minimumFractionDigits: 2 }) : '0.00'}</p>
+                                    <p className="text-4xl font-black text-white">
+                                        Rs. {payrollData ? new Intl.NumberFormat('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(payrollData.netSalary) : '0.00'}
+                                    </p>
                                     <p className="text-xs text-brand-green mt-4 font-bold flex items-center">
                                         <div className="w-2 h-2 rounded-full bg-brand-green mr-2 animate-pulse"></div> Live Projection
                                     </p>
@@ -223,7 +268,9 @@ const EmployeeDashboard = ({ onLogout, user, leaveRequests = [], employeesData =
                                     </div>
                                     <div className="text-right">
                                         <div className="text-[10px] font-black text-brand-yellow uppercase tracking-[0.2em] mb-1">Remaining</div>
-                                        <div className="text-3xl font-black text-brand-yellow tracking-tighter shadow-sm">{me?.remainingQuota || 0}</div>
+                                        <div className="text-3xl font-black text-brand-yellow tracking-tighter shadow-sm">
+                                            {(sick.total - sick.taken) + (annual.total - annual.taken) + (casual.total - casual.taken)}
+                                        </div>
                                     </div>
                                 </div>
                                 <div className="space-y-6 pt-2">
@@ -240,6 +287,13 @@ const EmployeeDashboard = ({ onLogout, user, leaveRequests = [], employeesData =
                                             <span className="text-brand-yellow font-black">{annual.total - annual.taken} LEFT</span>
                                         </div>
                                         {renderLeaveBoxes(annual.total, annual.taken, "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]")}
+                                    </div>
+                                    <div className="bg-white/[0.03] p-5 rounded-2xl border border-white/5">
+                                        <div className="flex justify-between text-xs font-bold text-white mb-2">
+                                            <span className="uppercase tracking-widest">Casual Leave</span>
+                                            <span className="text-brand-yellow font-black">{casual.total - casual.taken} LEFT</span>
+                                        </div>
+                                        {renderLeaveBoxes(casual.total, casual.taken, "bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.4)]")}
                                     </div>
                                 </div>
                             </div>
@@ -260,16 +314,19 @@ const EmployeeDashboard = ({ onLogout, user, leaveRequests = [], employeesData =
                                                     {evt.type}
                                                 </div>
                                                 <div>
-                                                    <h4 className="font-bold text-brand-black dark:text-white">{evt.title}</h4>
-                                                    <p className="text-xs text-gray-500">{evt.description}</p>
+                                                    <h4 className="font-bold text-brand-black dark:text-white truncate max-w-[150px] sm:max-w-none">{evt.title}</h4>
+                                                    <p className="text-xs text-gray-500 truncate max-w-[200px] sm:max-w-none">{evt.description}</p>
                                                 </div>
                                             </div>
-                                            <div className="text-right">
-                                                <p className="text-sm font-bold text-gray-700 dark:text-gray-300">{evt.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p>
-                                                <p className="text-xs text-gray-400">{evt.time}</p>
+                                            <div className="text-right flex-shrink-0">
+                                                <p className="text-sm font-bold text-gray-700 dark:text-gray-300">{evt.date.toLocaleDateString('en-PK', { month: 'short', day: 'numeric' })}</p>
+                                                <p className="text-[10px] text-gray-400 font-bold">{evt.date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
                                             </div>
                                         </div>
                                     ))}
+                                    {upcomingEvents.length === 0 && (
+                                        <div className="text-center py-10 text-gray-400 font-bold uppercase tracking-widest text-xs">No upcoming events</div>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -404,7 +461,9 @@ const EmployeeDashboard = ({ onLogout, user, leaveRequests = [], employeesData =
                                     <p className="text-white/60 font-medium uppercase tracking-widest text-[10px]">Employee: {currentEmployeeName}</p>
                                 </div>
                                 <div className="text-right z-10">
-                                    <p className="text-brand-yellow font-black text-6xl tracking-tighter">${pd ? pd.netSalary.toLocaleString(undefined, { minimumFractionDigits: 2 }) : '0.00'}</p>
+                                    <p className="text-brand-yellow font-black text-6xl tracking-tighter">
+                                        Rs. {pd ? new Intl.NumberFormat('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(pd.netSalary) : '0.00'}
+                                    </p>
                                     <p className="text-white/60 text-[10px] font-black uppercase tracking-widest mt-2 border-t border-white/20 pt-2 text-center">Net Distributed Carry</p>
                                 </div>
                             </div>
@@ -424,7 +483,9 @@ const EmployeeDashboard = ({ onLogout, user, leaveRequests = [], employeesData =
                                                         <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Standard Monthly Rate</p>
                                                     </div>
                                                 </div>
-                                                <p className="text-xl font-black text-brand-black dark:text-white">${me?.baseSalary?.toLocaleString() || '0'}</p>
+                                                <p className="text-xl font-black text-brand-black dark:text-white">
+                                                    Rs. {new Intl.NumberFormat('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(me?.baseSalary || 0)}
+                                                </p>
                                             </div>
 
                                             <div className="flex justify-between items-center bg-gray-50 dark:bg-gray-900 p-5 rounded-3xl border border-gray-100 dark:border-gray-700">
@@ -436,7 +497,7 @@ const EmployeeDashboard = ({ onLogout, user, leaveRequests = [], employeesData =
                                                     </div>
                                                 </div>
                                                 <p className={`text-xl font-black ${pd?.bankValue >= 0 ? 'text-brand-green' : 'text-red-500'}`}>
-                                                    {pd?.bankValue >= 0 ? '+' : '-'}${Math.abs(pd?.bankValue || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                    {pd?.bankValue >= 0 ? '+' : '-'}Rs. {new Intl.NumberFormat('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(pd?.bankValue || 0))}
                                                 </p>
                                             </div>
                                         </div>
@@ -537,11 +598,18 @@ const EmployeeDashboard = ({ onLogout, user, leaveRequests = [], employeesData =
                                     {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(day => <div key={day} className="text-center text-[10px] font-black text-gray-400 mb-4 uppercase tracking-[0.2em]">{day}</div>)}
                                     {blanks.map(blank => <div key={`blank-${blank}`} className="p-4 bg-gray-50/20 dark:bg-gray-900/10 rounded-xl"></div>)}
                                     {monthDays.map(day => {
-                                        const isToday = day === currDate.getDate();
-                                        const dateStr = `2026-03-${String(day).padStart(2, '0')}`;
-                                        const holiday = companyHolidays.find(h => h.date === dateStr);
-                                        const dObj = new Date(2026, 2, day);
+                                        const isToday = day === currDate.getDate() && currDate.getMonth() === new Date().getMonth() && currDate.getFullYear() === new Date().getFullYear();
+                                        const year = currDate.getFullYear();
+                                        const month = String(currDate.getMonth() + 1).padStart(2, '0');
+                                        const dateStr = `${year}-${month}-${String(day).padStart(2, '0')}`;
+                                        const holiday = (companyHolidays || []).find(h => h.date === dateStr);
+                                        const dObj = new Date(year, currDate.getMonth(), day);
                                         const isWeekend = dObj.getDay() === 0 || dObj.getDay() === 6;
+                                        const cellDateStr = dObj.toDateString();
+                                        const officialEvts = (events || []).filter(e => {
+                                            const eDate = e.date instanceof Date ? e.date : (e.date?.toDate ? e.date.toDate() : new Date(e.date));
+                                            return eDate.toDateString() === cellDateStr;
+                                        });
 
                                         return (
                                             <div key={day} className={`min-h-[110px] p-4 rounded-xl border transition-all ${isToday ? 'border-brand-green bg-brand-green/10 ring-2 ring-brand-green/20' :
@@ -549,11 +617,18 @@ const EmployeeDashboard = ({ onLogout, user, leaveRequests = [], employeesData =
                                                     'border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800/40'
                                                 } relative group hover:shadow-lg`}>
                                                 <div className={`text-sm font-black ${isToday ? 'text-brand-green' : isWeekend ? 'text-gray-300' : 'text-gray-700 dark:text-gray-300'}`}>{day}</div>
-                                                {holiday && (
-                                                    <div className="mt-2 text-[8px] bg-brand-green text-white px-2 py-1 rounded font-black truncate shadow-sm animate-fade-in uppercase tracking-widest">
-                                                        {holiday.title}
-                                                    </div>
-                                                )}
+                                                <div className="mt-2 space-y-1">
+                                                    {holiday && (
+                                                        <div className="text-[8px] bg-brand-green text-white px-2 py-1 rounded font-black truncate shadow-sm animate-fade-in uppercase tracking-widest">
+                                                            {holiday.title}
+                                                        </div>
+                                                    )}
+                                                    {officialEvts.map((evt, idx) => (
+                                                        <div key={idx} className={`text-[8px] px-2 py-1 rounded font-black truncate shadow-sm animate-fade-in uppercase tracking-widest ${evt.type === 'meeting' ? 'bg-brand-yellow text-brand-black' : 'bg-red-500 text-white'}`}>
+                                                            {evt.title}
+                                                        </div>
+                                                    ))}
+                                                </div>
                                                 {isToday && <div className="absolute bottom-2 right-2 w-1.5 h-1.5 rounded-full bg-brand-green"></div>}
                                             </div>
                                         )
@@ -588,19 +663,6 @@ const EmployeeDashboard = ({ onLogout, user, leaveRequests = [], employeesData =
 
     return (
         <div className="flex h-screen bg-gray-50 dark:bg-gray-900 transition-colors font-sans overflow-hidden">
-            {showReminder && (
-                <div className="fixed top-24 right-8 z-[110] bg-brand-yellow rounded-2xl shadow-2xl p-5 flex items-start w-80 animate-fade-in-right border-l-4 border-brand-green">
-                    <div className="bg-white p-2 rounded-xl mr-4 shrink-0 shadow-lg">
-                        <Bell className="text-brand-green" size={24} />
-                    </div>
-                    <div className="flex-1">
-                        <h4 className="font-black text-brand-black mb-1 uppercase tracking-tight text-sm">System Alert</h4>
-                        <p className="text-xs text-brand-black leading-relaxed font-bold opacity-80 mb-3 italic">"Don't forget the Daily Sync meeting in 30 minutes in the Main Hall."</p>
-                        <button onClick={() => setShowReminder(false)} className="text-[10px] uppercase font-black text-brand-black hover:underline tracking-widest">Dismiss Activity</button>
-                    </div>
-                    <button onClick={() => setShowReminder(false)} className="text-brand-black/40 hover:text-brand-black transition-transform"><X size={18} /></button>
-                </div>
-            )}
 
             {sidebarOpen && (
                 <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden" onClick={() => setSidebarOpen(false)}></div>
@@ -644,6 +706,46 @@ const EmployeeDashboard = ({ onLogout, user, leaveRequests = [], employeesData =
                     </div>
                     <div className="hidden sm:flex items-center space-x-6">
                         <div className="h-10 w-px bg-white/10"></div>
+                        <div className="relative">
+                            <button 
+                                onClick={() => setIsNotifDropdownOpen(!isNotifDropdownOpen)}
+                                className="relative p-2 text-white/80 hover:text-brand-yellow transition-all group"
+                            >
+                                <Bell size={24} className={`group-hover:scale-110 transition-transform ${unreadCount > 0 ? 'text-brand-yellow' : 'text-white'}`} style={{ color: '#FBC02D' }} />
+                                {unreadCount > 0 && (
+                                    <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-brand-yellow text-brand-black text-[10px] font-black shadow-lg border-2 border-brand-green animate-bounce">
+                                        {unreadCount}
+                                    </span>
+                                )}
+                            </button>
+
+                            {isNotifDropdownOpen && (
+                                <div className="absolute right-0 mt-4 w-80 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-700 overflow-hidden z-[150] animate-fade-in-down">
+                                    <div className="bg-gray-50 dark:bg-gray-900 px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
+                                        <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Inbox Activity</h4>
+                                        {unreadCount > 0 && <div className="bg-brand-yellow/10 text-brand-yellow text-[8px] font-black px-2 py-0.5 rounded">LIVE</div>}
+                                    </div>
+                                    <div className="max-h-80 overflow-y-auto">
+                                        {notifList.length > 0 ? notifList.slice(0, 5).map(notif => (
+                                            <div 
+                                                key={notif.id} 
+                                                onClick={() => markAsRead(notif.id)}
+                                                className={`p-5 border-b border-gray-50 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors relative ${!notif.isRead ? 'bg-brand-yellow/5' : ''}`}
+                                            >
+                                                {!notif.isRead && <div className="absolute left-0 top-0 bottom-0 w-1 bg-brand-yellow"></div>}
+                                                <p className={`text-xs font-bold ${!notif.isRead ? 'text-brand-black dark:text-white' : 'text-gray-400'}`}>{notif.text || notif.title}</p>
+                                                <p className="text-[9px] text-gray-300 mt-2 font-black uppercase tracking-widest">{notif.timestamp?.toDate ? notif.timestamp.toDate().toLocaleTimeString() : 'Recently'}</p>
+                                            </div>
+                                        )) : (
+                                            <div className="p-10 text-center text-gray-400 font-bold uppercase tracking-widest text-[10px]">No notifications</div>
+                                        )}
+                                    </div>
+                                    <div className="bg-brand-green p-3 text-center">
+                                        <button onClick={() => setIsNotifDropdownOpen(false)} className="text-[10px] font-black text-white hover:text-brand-yellow uppercase tracking-widest">Close Panel</button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                         <div className="text-right">
                             <p className="text-xs font-black text-white tracking-tight">{currentEmployeeName}</p>
                             <p className="text-[9px] font-bold text-brand-yellow uppercase tracking-widest opacity-80">{me?.role || 'Personnel'}</p>

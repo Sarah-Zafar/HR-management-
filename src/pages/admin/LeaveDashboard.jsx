@@ -177,6 +177,10 @@ const LeaveDashboard = ({ onLogout, leaveRequests = [], setLeaveRequests, employ
                             <Plane className="mr-3" size={20} />
                             <span>Leave Dashboard</span>
                         </a>
+                        <a href="#" onClick={(e) => { e.preventDefault(); navigate('/hr-calendar'); }} className="flex items-center px-4 py-3 rounded-lg text-white/80 hover:bg-white/10 hover:text-white transition-all group">
+                            <Calendar className="mr-3 text-brand-yellow group-hover:scale-110 transition-transform" size={20} />
+                            <span className="font-medium">HR Calendar</span>
+                        </a>
                         <a href="#" onClick={(e) => { e.preventDefault(); navigate('/admin/chart'); }} className="flex items-center px-4 py-3 rounded-lg text-white/80 hover:bg-white/10 hover:text-white transition-all group">
                             <Network className="mr-3 text-brand-yellow group-hover:scale-110 transition-transform" size={20} />
                             <span className="font-medium">Chart</span>
